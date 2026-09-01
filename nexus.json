@@ -1,0 +1,42 @@
+{
+  "nexus_version": "1.0",
+  "app": {
+    "name": "Engram",
+    "id": "engram",
+    "category": "life",
+    "version": "0.1.0",
+    "description": "融合打字背单词、连词造句、AI 口语评测与间隔重复记忆曲线的离线英语学习应用",
+    "bundle_id": "com.nexus.life.engram",
+    "url_scheme": "nexus-engram",
+    "theme_color": "#6C5CE7",
+    "hotkey": "Ctrl+Option+E",
+    "min_macos": "14.0"
+  },
+  "commonkit": {
+    "version": "1.0",
+    "components": [
+      "NXHotKeyManager",
+      "NXURLScheme",
+      "NXWindowStyle",
+      "NXStatusItem",
+      "NXPixelUtils",
+      "NXCommon"
+    ]
+  },
+  "ui": {
+    "style": "毛玻璃浮动窗 + 不透明卡片 + 左侧固定导航",
+    "description": "星云紫主色 #6C5CE7，Nexus 家族一致的毛玻璃浮动窗；卡片不透明以避免非 Retina 下文字发虚；左侧 196pt 导航，右侧内容区，固定宽度、纵向可缩放。用户已全权委托 AI 决策 UI（明确要求完成前不打扰），故 ui.confirmed 由开发者代确认，依据见 docs/UI_DESIGN.md。",
+    "reference_urls": [
+      "https://aka.doubaocdn.com/s/DlO9fUUoUp",
+      "https://aka.doubaocdn.com/s/4CL6vYBdVM",
+      "https://aka.doubaocdn.com/s/wPDlXTxQZ1"
+    ],
+    "primary_color": "#6C5CE7",
+    "window_width": 940,
+    "window_height": 640,
+    "confirmed": true,
+    "confirmed_date": "2026-09-01"
+  },
+  "created": "2026-09-01",
+  "last_updated": "2026-09-01"
+}

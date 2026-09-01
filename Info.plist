@@ -1,0 +1,43 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+	<key>CFBundleName</key>
+	<string>Engram</string>
+	<key>CFBundleDisplayName</key>
+	<string>Engram</string>
+	<key>CFBundleExecutable</key>
+	<string>Engram</string>
+	<key>CFBundleIdentifier</key>
+	<string>com.nexus.life.engram</string>
+	<key>CFBundlePackageType</key>
+	<string>APPL</string>
+	<key>CFBundleIconFile</key>
+	<string>AppIcon</string>
+	<key>CFBundleShortVersionString</key>
+	<string>0.1.0</string>
+	<key>CFBundleVersion</key>
+	<string>0.1.0</string>
+	<key>LSMinimumSystemVersion</key>
+	<string>14.0</string>
+	<key>LSUIElement</key>
+	<true/>
+	<key>NSHighResolutionCapable</key>
+	<true/>
+	<key>NSMicrophoneUsageDescription</key>
+	<string>Engram 需要使用麦克风进行英语口语跟读识别与发音评分，识别在本机离线完成，不上传任何音频。</string>
+	<key>NSSpeechRecognitionUsageDescription</key>
+	<string>Engram 使用系统语音识别把你的朗读转写为文本以进行发音评分，优先在本机离线运行。</string>
+	<key>CFBundleURLTypes</key>
+	<array>
+		<dict>
+			<key>CFBundleURLName</key>
+			<string>com.nexus.life.engram</string>
+			<key>CFBundleURLSchemes</key>
+			<array>
+				<string>nexus-engram</string>
+			</array>
+		</dict>
+	</array>
+</dict>
+</plist>
