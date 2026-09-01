@@ -11,8 +11,9 @@ private final class TextMenuButton: NSButton {
     var values: [Any?] = []
     var onPick: ((Int) -> Void)?
     private var isHovered = false
+    var selectedIndex: Int = 0
 
-    init(title: String) {
+    init(title: String, tooltip: String = "") {
         super.init(frame: .zero)
         self.title = title
         isBordered = false
@@ -21,7 +22,8 @@ private final class TextMenuButton: NSButton {
         alignment = .center
         contentTintColor = .labelColor
         wantsLayer = true
-        layer?.cornerRadius = 4
+        layer?.cornerRadius = 6
+        self.toolTip = tooltip
         target = self
         action = #selector(showMenu)
         updateAppearance()
@@ -36,6 +38,7 @@ private final class TextMenuButton: NSButton {
             let item = NSMenuItem(title: title, action: #selector(picked(_:)), keyEquivalent: "")
             item.target = self
             item.tag = index
+            item.state = (index == selectedIndex) ? .on : .off
             menu.addItem(item)
         }
         menu.popUp(positioning: nil, at: NSPoint(x: 0, y: bounds.height + 6), in: self)
@@ -44,13 +47,15 @@ private final class TextMenuButton: NSButton {
     @objc private func picked(_ sender: NSMenuItem) {
         let index = sender.tag
         guard items.indices.contains(index) else { return }
+        selectedIndex = index
         title = items[index]
         onPick?(index)
     }
 
     private func updateAppearance() {
-        layer?.backgroundColor = isHovered ? NSColor.black.withAlphaComponent(0.05).cgColor : .clear
-        contentTintColor = isHovered ? Theme.primary : .labelColor
+        // qwerty 悬停：紫底白字
+        layer?.backgroundColor = isHovered ? Theme.primary.cgColor : .clear
+        contentTintColor = isHovered ? .white : .labelColor
     }
 
     override func updateTrackingAreas() {
@@ -82,7 +87,8 @@ private final class ToolbarIconButton: NSButton {
     private var activeState: Bool
 
     init(iconName: String, fallbackSymbol: String, tooltip: String, active: Bool) {
-        self.activeTint = Theme.primary
+        // qwerty 图标色调：indigo-500 (#6366f1)
+        self.activeTint = NSColor(red: 0.388, green: 0.400, blue: 0.945, alpha: 1.0)
         self.inactiveTint = Theme.textSecondary
         self.activeState = active
         super.init(frame: .zero)
@@ -124,8 +130,8 @@ private final class ToolbarIconButton: NSButton {
     }
 
     private func updateAppearance() {
-        layer?.backgroundColor = isHovered ? Theme.primary.withAlphaComponent(0.10).cgColor : .clear
-        contentTintColor = isHovered ? Theme.primary : (activeState ? activeTint : inactiveTint)
+        layer?.backgroundColor = isHovered ? activeTint.withAlphaComponent(0.10).cgColor : .clear
+        contentTintColor = isHovered ? activeTint : (activeState ? activeTint : inactiveTint)
     }
 
     override func updateTrackingAreas() {
@@ -316,12 +322,16 @@ final class TypingPageView: NSView {
 
     private func setupLayout() {
         // 顶部栏
-        deckText.onPick = { [weak self] _ in
+        deckText.toolTip = "词库切换"
+        deckText.onPick = { [weak self] idx in
+            self?.deckText.selectedIndex = idx
             self?.populateChapters()
             self?.layoutToolbar()
             self?.startSession()
         }
-        chapterText.onPick = { [weak self] _ in
+        chapterText.toolTip = "章节切换"
+        chapterText.onPick = { [weak self] idx in
+            self?.chapterText.selectedIndex = idx
             self?.layoutToolbar()
             self?.startSession()
         }
@@ -375,7 +385,7 @@ final class TypingPageView: NSView {
 
         // 离开窗口/页面时自动暂停（qwerty 行为）
         NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: nil, queue: .main) { [weak self] _ in
-            self?.autoPauseIfNeeded()
+            self?.pauseIfNeeded()
         }
 
         // 底部
@@ -503,17 +513,20 @@ final class TypingPageView: NSView {
         deckText.items = decks.map { $0.name }
         deckText.values = decks.map { $0.id as Any? }
         deckText.title = decks.first?.name ?? ""
+        deckText.selectedIndex = 0
     }
 
     private func populateChapters() {
         guard let deckId = selectedDeckId(), let count = state?.library.words(in: deckId).count, count > 0 else {
             chapterText.items = ["第 1 章"]
             chapterText.title = "第 1 章"
+            chapterText.selectedIndex = 0
             return
         }
         let chapterCount = max(1, Int(ceil(Double(count) / Double(Self.wordsPerChapter))))
         chapterText.items = (1...chapterCount).map { "第 \($0) 章" }
         chapterText.title = "第 1 章"
+        chapterText.selectedIndex = 0
     }
 
     private func selectedDeckId() -> String? {
@@ -575,8 +588,8 @@ final class TypingPageView: NSView {
         render()
     }
 
-    /// 离开窗口/页面时自动暂停
-    private func autoPauseIfNeeded() {
+    /// 离开页面/窗口失焦时自动暂停（供 RootViewController 调用）
+    func pauseIfNeeded() {
         if hasStartedTyping && !isPaused && resultCard.isHidden {
             pauseSession()
         }
@@ -585,7 +598,7 @@ final class TypingPageView: NSView {
     /// 离开页面时自动暂停（view 从 window 移除）
     override func viewWillMove(toWindow newWindow: NSWindow?) {
         super.viewWillMove(toWindow: newWindow)
-        if newWindow == nil { autoPauseIfNeeded() }
+        if newWindow == nil { pauseIfNeeded() }
     }
 
     /// 更新 Start/Pause 按钮外观：进行中=灰色 Pause，未开始/暂停=紫色 Start
@@ -615,6 +628,96 @@ final class TypingPageView: NSView {
         case 8: showSettings(sender)           // 设置
         default: break
         }
+    }
+
+    // MARK: - 通用：干净样式的下拉按钮（NSButton+NSMenu，替代 NSPopUpButton）
+
+    /// 自定义下拉按钮：白色圆角 + 文字左 + chevron 右，点击弹出独立 NSMenu（带勾选）
+    private class DropdownButton: NSView {
+        private let titleLabel = NSTextField(labelWithString: "")
+        private let chevron = NSImageView()
+        private let bg = NSView()
+        var items: [String]
+        var selectedIndex: Int
+        var onPick: ((Int) -> Void)?
+
+        init(items: [String], selectedIndex: Int, onPick: @escaping (Int) -> Void) {
+            self.items = items
+            self.selectedIndex = selectedIndex
+            self.onPick = onPick
+            super.init(frame: .zero)
+            wantsLayer = true
+
+            bg.wantsLayer = true
+            bg.layer?.cornerRadius = 6
+            bg.layer?.borderWidth = 1
+            bg.layer?.borderColor = Theme.divider.cgColor
+            bg.layer?.backgroundColor = NSColor(name: nil) { app in
+                app.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+                    ? NSColor(white: 0.22, alpha: 1)
+                    : NSColor(white: 0.97, alpha: 1)
+            }.cgColor
+            addSubview(bg)
+
+            titleLabel.stringValue = items.indices.contains(selectedIndex) ? items[selectedIndex] : ""
+            titleLabel.font = .systemFont(ofSize: 13, weight: .regular)
+            titleLabel.textColor = Theme.textPrimary
+            titleLabel.drawsBackground = false
+            titleLabel.isBezeled = false
+            titleLabel.isEditable = false
+            titleLabel.cell?.usesSingleLineMode = true
+            titleLabel.cell?.lineBreakMode = .byTruncatingTail
+            addSubview(titleLabel)
+
+            chevron.image = NSImage(systemSymbolName: "chevron.down", accessibilityDescription: nil)
+            chevron.contentTintColor = Theme.textSecondary
+            chevron.imageScaling = .scaleProportionallyUpOrDown
+            addSubview(chevron)
+        }
+
+        required init?(coder: NSCoder) { fatalError() }
+
+        override func layout() {
+            super.layout()
+            bg.frame = bounds
+            titleLabel.frame = CGRect(x: 10, y: (bounds.height - 18) / 2,
+                                      width: bounds.width - 36, height: 18)
+            chevron.frame = CGRect(x: bounds.width - 22, y: (bounds.height - 10) / 2,
+                                   width: 12, height: 10)
+        }
+
+        override func mouseDown(with event: NSEvent) {
+            showMenu()
+        }
+
+        private func showMenu() {
+            let menu = NSMenu()
+            menu.autoenablesItems = false
+            for (i, item) in items.enumerated() {
+                let mi = NSMenuItem(title: item, action: #selector(menuPicked(_:)), keyEquivalent: "")
+                mi.target = self
+                mi.tag = i
+                mi.state = (i == selectedIndex) ? .on : .off
+                menu.addItem(mi)
+            }
+            // 弹出位置：按钮左下角下方 2pt，转屏幕坐标
+            let windowPt = convert(NSPoint(x: 0, y: -2), to: nil)
+            let screenPt = window?.convertPoint(toScreen: windowPt) ?? windowPt
+            menu.popUp(positioning: nil, at: screenPt, in: nil)
+        }
+
+        @objc private func menuPicked(_ sender: NSMenuItem) {
+            selectedIndex = sender.tag
+            titleLabel.stringValue = items[selectedIndex]
+            onPick?(selectedIndex)
+        }
+    }
+
+    private func makeCleanDropdown(frame: CGRect, items: [String], selectedIndex: Int,
+                                   onPick: @escaping (Int) -> Void) -> DropdownButton {
+        let btn = DropdownButton(items: items, selectedIndex: selectedIndex, onPick: onPick)
+        btn.frame = frame
+        return btn
     }
 
     // MARK: - 音效面板（qwerty SoundSwitcher：按键音 + 效果音）
@@ -712,12 +815,18 @@ final class TypingPageView: NSView {
             modeLabel.frame = CGRect(x: 16, y: 58, width: 80, height: 18)
             view.addSubview(modeLabel)
 
-            let popup = NSPopUpButton(frame: CGRect(x: 16, y: 24, width: 208, height: 26))
-            popup.addItems(withTitles: ["全部隐藏", "隐藏元音", "隐藏辅音", "随机隐藏"])
             let modeMap: [DictationMode] = [.hideAll, .hideVowels, .hideConsonants, .randomHide]
-            if let idx = modeMap.firstIndex(of: dictationMode) { popup.selectItem(at: idx) }
-            popup.target = self
-            popup.action = #selector(dictationModeChanged(_:))
+            let selectedIdx = modeMap.firstIndex(of: dictationMode) ?? 0
+            let popup = makeCleanDropdown(
+                frame: CGRect(x: 16, y: 24, width: 208, height: 28),
+                items: ["全部隐藏", "隐藏元音", "隐藏辅音", "随机隐藏"],
+                selectedIndex: selectedIdx
+            ) { [weak self] idx in
+                let modes: [DictationMode] = [.hideAll, .hideVowels, .hideConsonants, .randomHide]
+                self?.dictationMode = modes[idx]
+                self?.updateDictationIcon()
+                self?.render()
+            }
             view.addSubview(popup)
         }
 
@@ -740,16 +849,6 @@ final class TypingPageView: NSView {
             if self.iconButtons.count > 2 {
                 self.showDictationPanel(self.iconButtons[2])
             }
-        }
-    }
-
-    @objc private func dictationModeChanged(_ sender: NSPopUpButton) {
-        let modes: [DictationMode] = [.hideAll, .hideVowels, .hideConsonants, .randomHide]
-        let idx = sender.indexOfSelectedItem
-        if modes.indices.contains(idx) {
-            dictationMode = modes[idx]
-            updateDictationIcon()
-            render()
         }
     }
 
@@ -954,7 +1053,7 @@ final class TypingPageView: NSView {
 
     @objc private func showPronunciationPanel(_ sender: NSButton) {
         let pronOn = !accentLocale.isEmpty
-        let viewH: CGFloat = pronOn ? 230 : 150
+        let viewH: CGFloat = pronOn ? 310 : 150
         let popover = NSPopover()
         popover.behavior = .transient
         let content = NSViewController()
@@ -1041,11 +1140,16 @@ final class TypingPageView: NSView {
             accentLabel.frame = CGRect(x: 16, y: y, width: 120, height: 18)
             view.addSubview(accentLabel)
             y -= 30
-            let accentPopup = NSPopUpButton(frame: CGRect(x: 16, y: y, width: 208, height: 26))
-            accentPopup.addItems(withTitles: ["美音", "英音"])
-            accentPopup.selectItem(at: accentLocale == "en-GB" ? 1 : 0)
-            accentPopup.target = self
-            accentPopup.action = #selector(pronAccentChanged(_:))
+            let accentPopup = makeCleanDropdown(
+                frame: CGRect(x: 16, y: y, width: 208, height: 28),
+                items: ["美音", "英音"],
+                selectedIndex: accentLocale == "en-GB" ? 1 : 0
+            ) { [weak self] idx in
+                guard let self = self else { return }
+                self.accentLocale = idx == 1 ? "en-GB" : "en-US"
+                self.pronunciationButton.title = idx == 1 ? "英音" : "美音"
+                self.layoutToolbar()
+            }
             view.addSubview(accentPopup)
         }
 
@@ -1089,12 +1193,6 @@ final class TypingPageView: NSView {
         if let status = sender.superview?.viewWithTag(204) as? NSTextField {
             status.stringValue = loopPronunciationEnabled ? "循环已开启" : "循环已关闭"
         }
-    }
-
-    @objc private func pronAccentChanged(_ sender: NSPopUpButton) {
-        accentLocale = sender.indexOfSelectedItem == 1 ? "en-GB" : "en-US"
-        pronunciationButton.title = sender.indexOfSelectedItem == 1 ? "英音" : "美音"
-        layoutToolbar()
     }
 
     /// 深色模式开关（qwerty sun/moon 图标）

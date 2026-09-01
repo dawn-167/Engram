@@ -72,6 +72,10 @@ final class RootViewController: NSViewController {
 
     private func showPage(_ page: AppPage) {
         guard let target = pageViews[page] else { return }
+        // 离开打字页时自动暂停
+        if currentPage == .typing && page != .typing {
+            (pageViews[.typing] as? TypingPageView)?.pauseIfNeeded()
+        }
         if target.superview == nil {
             let inset = Theme.pagePadding
             target.frame = CGRect(x: inset, y: inset,
