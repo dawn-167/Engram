@@ -242,6 +242,8 @@ final class TypingPageView: NSView {
     private let toolbarCard = CardView()
     private var iconButtons: [ToolbarIconButton] = []
     private let startButton: NSButton
+    /// 当前弹出的 Popover（统一管理，修复关闭后无法再次打开的 bug）
+    private var currentPopover: NSPopover?
 
     // 中间界面
     private let wordLabel = NSTextField(labelWithString: "")
@@ -720,6 +722,13 @@ final class TypingPageView: NSView {
         return btn
     }
 
+    /// 统一弹出 Popover：先关闭上一个，再显示新的（修复关闭后无法再次打开的 bug）
+    private func presentPopover(_ popover: NSPopover, sender: NSButton) {
+        currentPopover?.close()
+        currentPopover = popover
+        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+    }
+
     // MARK: - 音效面板（qwerty SoundSwitcher：按键音 + 效果音）
 
     private func showSoundPanel(_ sender: NSButton) {
@@ -762,7 +771,7 @@ final class TypingPageView: NSView {
         view.addSubview(hintStatus)
 
         popover.contentViewController = content
-        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+        presentPopover(popover, sender: sender)
     }
 
     @objc private func soundKeyToggle(_ sender: NSSwitch) {
@@ -831,7 +840,7 @@ final class TypingPageView: NSView {
         }
 
         popover.contentViewController = content
-        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+        presentPopover(popover, sender: sender)
     }
 
     @objc private func dictationToggleChanged(_ sender: NSSwitch) {
@@ -845,7 +854,7 @@ final class TypingPageView: NSView {
         // 切换开关时重建面板（显示/隐藏模式选择）
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            sender.window?.close()
+            currentPopover?.close()
             if self.iconButtons.count > 2 {
                 self.showDictationPanel(self.iconButtons[2])
             }
@@ -886,15 +895,14 @@ final class TypingPageView: NSView {
         }
 
         popover.contentViewController = content
-        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+        presentPopover(popover, sender: sender)
     }
 
     @objc private func loopOptionSelected(_ sender: NSButton) {
         let times = sender.tag
         service.loopTimes = times
         updateLoopIcon()
-        // 关闭 popover
-        sender.window?.close()
+        currentPopover?.close()
     }
 
     /// 更新循环图标：1=repeat-off(灰)，其他=repeat+数字角标(紫)
@@ -955,7 +963,7 @@ final class TypingPageView: NSView {
             view.addSubview(scroll)
         }
         popover.contentViewController = content
-        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+        presentPopover(popover, sender: sender)
     }
 
     // MARK: - 指法图示弹窗
@@ -992,7 +1000,7 @@ final class TypingPageView: NSView {
             view.addSubview(finger); view.addSubview(keys)
         }
         popover.contentViewController = content
-        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+        presentPopover(popover, sender: sender)
     }
 
     // MARK: - 设置弹窗
@@ -1033,7 +1041,7 @@ final class TypingPageView: NSView {
         view.addSubview(hint)
 
         popover.contentViewController = content
-        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+        presentPopover(popover, sender: sender)
     }
 
     @objc private func settingsSoundToggle(_ sender: NSButton) {
@@ -1154,7 +1162,7 @@ final class TypingPageView: NSView {
         }
 
         popover.contentViewController = content
-        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+        presentPopover(popover, sender: sender)
     }
 
     @objc private func pronPhoneticToggle(_ sender: NSSwitch) {
@@ -1176,7 +1184,7 @@ final class TypingPageView: NSView {
         // 切换单词发音开关时重建面板（显示/隐藏下方选项）
         DispatchQueue.main.async { [weak self] in
             guard let self = self else { return }
-            sender.window?.close()
+            currentPopover?.close()
             self.showPronunciationPanel(self.pronunciationButton)
         }
     }
