@@ -69,13 +69,13 @@ final class StatsPageView: NSView {
         // 七日活跃卡片
         let card = CardView()
         addSubview(card)
-        card.frame = CGRect(x: 0, y: 300, width: 696, height: 210)
-        card.autoresizingMask = [.maxYMargin, .width]
+        card.frame = CGRect(x: 0, y: 300, width: 696, height: 270)
+        card.autoresizingMask = [.maxYMargin]
         let weekTitle = LabelFactory.label("最近 7 天练习量", font: Theme.heading(15))
         card.addSubview(weekTitle)
-        weekTitle.frame = CGRect(x: 18, y: 16, width: 300, height: 20)
+        weekTitle.frame = CGRect(x: 18, y: 20, width: 300, height: 20)
         card.addSubview(weekBars)
-        weekBars.frame = CGRect(x: 24, y: 50, width: 648, height: 140)
+        weekBars.frame = CGRect(x: 24, y: 56, width: 648, height: 190)
     }
 
     private func layoutTiles(_ items: [(key: String, caption: String)], y: CGFloat, color: NSColor) {

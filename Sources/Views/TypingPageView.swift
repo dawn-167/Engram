@@ -212,8 +212,11 @@ final class TypingPageView: NSView {
 
     private func renderWordText(_ text: String) -> NSAttributedString {
         let states = service.charStates()
+        // 富文本必须显式带居中段落样式，否则会覆盖 NSTextField 的 alignment=.center
+        let para = NSMutableParagraphStyle()
+        para.alignment = .center
         let result = NSMutableAttributedString()
-        let font = Theme.mono(40)
+        let font = Theme.mono(44)
         for (index, char) in text.enumerated() {
             let state = states.indices.contains(index) ? states[index] : .pending
             let color: NSColor
@@ -226,7 +229,9 @@ final class TypingPageView: NSView {
                 }
             }
             result.append(NSAttributedString(string: String(char),
-                                             attributes: [.font: font, .foregroundColor: color]))
+                                             attributes: [.font: font,
+                                                          .foregroundColor: color,
+                                                          .paragraphStyle: para]))
         }
         return result
     }

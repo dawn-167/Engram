@@ -118,21 +118,21 @@ final class HomeView: NSView {
     private func layoutBottomCard() {
         let card = CardView()
         addSubview(card)
-        card.frame = CGRect(x: 0, y: 358, width: 696, height: 150)
-        card.autoresizingMask = [.maxYMargin, .width]
+        card.frame = CGRect(x: 0, y: 358, width: 696, height: 220)
+        card.autoresizingMask = [.maxYMargin]
 
         let goalTitle = LabelFactory.label("今日新学目标", font: Theme.heading(13))
         card.addSubview(goalTitle); card.addSubview(goalLabel); card.addSubview(goalBar)
-        goalTitle.frame = CGRect(x: 18, y: 112, width: 200, height: 18)
-        goalLabel.frame = CGRect(x: 496, y: 112, width: 170, height: 18)
+        goalTitle.frame = CGRect(x: 18, y: 172, width: 200, height: 18)
+        goalLabel.frame = CGRect(x: 496, y: 172, width: 170, height: 18)
         goalLabel.alignment = .right
-        goalBar.frame = CGRect(x: 18, y: 92, width: 660, height: 8)
+        goalBar.frame = CGRect(x: 18, y: 148, width: 660, height: 8)
 
         let weekTitle = LabelFactory.label("最近 7 天活跃", font: Theme.heading(13))
         card.addSubview(weekTitle)
-        weekTitle.frame = CGRect(x: 18, y: 60, width: 200, height: 18)
+        weekTitle.frame = CGRect(x: 18, y: 104, width: 200, height: 18)
         card.addSubview(weekBars)
-        weekBars.frame = CGRect(x: 18, y: 12, width: 660, height: 44)
+        weekBars.frame = CGRect(x: 18, y: 16, width: 660, height: 80)
     }
 
     // MARK: - 辅助

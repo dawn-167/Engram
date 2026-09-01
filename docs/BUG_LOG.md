@@ -116,3 +116,14 @@
 **根因**：原代码硬编码 `com.apple.voice.enhanced.en-US.Samantha`，但该增强版语音未在用户系统安装，实际回退到 compact 版；且无切换入口。
 **修复**：①SpeechService 启动时枚举系统全部英文语音，按 Premium>Enhanced>Default、en-US>en-GB>其他 排序自动选最优；②新增 `availableVoices` / `setVoice(identifier:)` / `selectedVoiceDescription` 接口；③口语页新增语音下拉选择器（含质量标记 ★Premium/◆Enhanced/·Default），并提示用户在系统设置安装 Premium 语音。
 **说明**：完全离线零依赖约束下无法使用云端神经 TTS；macOS Premium 语音（如 Samantha Premium、Aaron）为免费系统组件，安装后音质接近真人，应用会自动优先选用。
+
+### BUG-011：卡片宽度被 autoresizing 错误拉伸，右侧溢出窗口（关键，第三轮才定位根因）
+
+**严重度**：高（用户可见，前两轮误判为窗口高度问题）
+**现象**：学习中心底部卡、连词造句两个词块卡、学习统计底部卡的右侧均超出窗口被裁切；打字页单词富文本左对齐不居中。
+**根因（宽度）**：页面视图在 `buildPages()` 阶段以 `.zero`（0×0）创建，子视图（卡片）此时设置了固定宽度并带 `autoresizingMask = [.width]`；之后 `showPage` 把页面 frame 从 0 设为 696 宽，AppKit 按比例自动伸缩子视图——父视图宽度从 0 变为 696 时伸缩比例失真，卡片被拉到远超设定宽度（如 620→约 688）。窗口宽度固定为 940 不会变化，`.width` 伸缩本就多余。
+**修复**：移除 HomeView / SentenceBuildPageView / StatsPageView 中所有子视图的 `.width` autoresizing（保留 `.maxYMargin` 用于纵向锚定），卡片严格使用固定 frame。
+**根因（单词不居中）**：`wordLabel.attributedStringValue` 赋的富文本未带段落样式，NSAttributedString 默认左对齐会覆盖 NSTextField 的 `alignment = .center`。
+**修复**：`renderWordText` 为每段富文本显式附加 `NSMutableParagraphStyle(alignment = .center)`。
+**配套调整**：窗口高度定为 680（前一轮 720 导致底部空一大片，640 又不够），首页/统计页/造句页卡片高度重新分配填满空间。
+**教训**：手动 frame 布局下，子视图不应在父视图尺寸为 0 时带 `.width/.height` autoresizing；富文本着色必须显式带段落对齐样式。

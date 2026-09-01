@@ -58,25 +58,21 @@ final class SentenceBuildPageView: NSView {
 
         let pickedCard = CardView()
         addSubview(pickedCard)
-        pickedCard.frame = CGRect(x: 40, y: 150, width: 620, height: 110)
-        pickedCard.autoresizingMask = [.width]
+        pickedCard.frame = CGRect(x: 40, y: 150, width: 620, height: 120)
         pickedCard.addSubview(pickedFlow)
-        pickedFlow.frame = CGRect(x: 0, y: 0, width: 620, height: 110)
-        pickedFlow.autoresizingMask = [.width]
+        pickedFlow.frame = CGRect(x: 0, y: 0, width: 620, height: 120)
 
-        answerLabel.frame = CGRect(x: 40, y: 272, width: 620, height: 28)
+        answerLabel.frame = CGRect(x: 40, y: 284, width: 620, height: 28)
         addSubview(answerLabel)
 
-        feedbackLabel.frame = CGRect(x: 40, y: 306, width: 620, height: 20)
+        feedbackLabel.frame = CGRect(x: 40, y: 318, width: 620, height: 20)
         addSubview(feedbackLabel)
 
         let optionsCard = CardView()
         addSubview(optionsCard)
-        optionsCard.frame = CGRect(x: 40, y: 336, width: 620, height: 130)
-        optionsCard.autoresizingMask = [.width]
+        optionsCard.frame = CGRect(x: 40, y: 348, width: 620, height: 150)
         optionsCard.addSubview(optionsFlow)
-        optionsFlow.frame = CGRect(x: 0, y: 0, width: 620, height: 130)
-        optionsFlow.autoresizingMask = [.width]
+        optionsFlow.frame = CGRect(x: 0, y: 0, width: 620, height: 150)
 
         nextButton.title = "下一句 →"
         nextButton.bezelStyle = .inline
@@ -89,7 +85,7 @@ final class SentenceBuildPageView: NSView {
         nextButton.target = self
         nextButton.action = #selector(nextTapped)
         addSubview(nextButton)
-        nextButton.frame = CGRect(x: 290, y: 500, width: 120, height: 38)
+        nextButton.frame = CGRect(x: 290, y: 530, width: 120, height: 38)
         nextButton.isHidden = true
     }
 
