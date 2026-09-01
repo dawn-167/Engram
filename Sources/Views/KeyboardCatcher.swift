@@ -15,7 +15,8 @@ final class KeyboardCatcher: NSView {
         8: "c", 9: "v", 11: "b", 12: "q", 13: "w", 14: "e", 15: "r",
         16: "y", 17: "t", 31: "o", 32: "u", 34: "i", 35: "p", 37: "l",
         38: "j", 40: "k", 45: "n", 46: "m",
-        48: "\t" // Tab
+        48: "\t", // Tab
+        36: "\r"  // Return/Enter（开始/暂停切换）
     ]
 
     override var acceptsFirstResponder: Bool { true }
@@ -31,7 +32,7 @@ final class KeyboardCatcher: NSView {
         }
         // 其余可打印字符兜底（理论上打字页只需要字母与 Tab）
         guard let text = event.charactersIgnoringModifiers, let char = text.first,
-              char.isLetter || char == "\t" else { return }
+              char.isLetter || char == "\t" || char == "\r" || char == "\n" else { return }
         onKey?(Character(String(char).lowercased()))
     }
 }

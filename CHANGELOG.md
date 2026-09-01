@@ -2,6 +2,21 @@
 
 所有值得关注的变更都记录在此文件中。格式遵循 [Keep a Changelog](https://keepachangelog.com/zh-CN/1.1.0/)。
 
+## [0.3.0] — 2026-09-01
+
+### 新增
+
+- **Start/Pause 按钮**：右侧仅保留 Start 按钮（去除跳过），开始后变灰色 Pause；Enter 键切换开始/暂停；暂停时显示模糊遮罩 +「按任意键继续」，任意字母键恢复。
+- **自动暂停**：窗口失焦或离开打字页时自动暂停，计时与输入同步冻结，返回后可继续。
+- **暂停计时累计**：暂停前用时存入 accumulatedElapsed，恢复后接续计算，WPM/时间不受暂停影响。
+- **默写模式下拉面板**：eye 图标弹出面板（NSSwitch 开关 + NSPopUpButton 模式选择：全部隐藏/隐藏元音/隐藏辅音/随机隐藏），对齐 Qwerty WordDictationSwitcher。
+
+### 修复
+
+- **毛玻璃样式对齐 Qwerty**：从整页遮罩改为仅覆盖单词区（单词+音标+释义），NSVisualEffectView backdrop-blur + CAGradientLayer 上下渐变 mask 消除硬边界，「按任意键开始/继续」文字清晰浮于模糊层之上。
+- **Enter 键支持**：KeyboardCatcher 新增 keyCode 36 → \r 映射，兜底逻辑接受 \r/\n。
+- **blurTop 计算修复**：layout() 中用 wordBlockTop 而非 hintLabel.y 计算模糊区域上边界，确保单词被正确模糊。
+
 ## [0.2.0] — 2026-09-01
 
 ### 新增

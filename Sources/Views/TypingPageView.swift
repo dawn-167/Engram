@@ -219,6 +219,10 @@ final class TypingPageView: NSView {
     private var dictationMode: DictationMode = .off
     /// 音效开关（qwerty speaker 图标）
     private var soundEnabled = true
+    /// 暂停状态（qwerty Pause）
+    private var isPaused = false
+    /// 暂停前累计已用时间（暂停/恢复计时用）
+    private var accumulatedElapsed: TimeInterval = 0
 
     // 顶部栏
     private let deckText = TextMenuButton(title: "")
@@ -226,7 +230,6 @@ final class TypingPageView: NSView {
     private let accentText = TextMenuButton(title: "美音")
     private let toolbarCard = CardView()
     private var iconButtons: [ToolbarIconButton] = []
-    private let skipButton: NSButton
     private let startButton: NSButton
 
     // 中间界面
@@ -271,19 +274,14 @@ final class TypingPageView: NSView {
     private static let iconsToStartGap: CGFloat = 12
     private static let iconSize: CGFloat = 22
     private static let startWidth: CGFloat = 64
-    private static let skipWidth: CGFloat = 52
-    private static let iconsToSkipGap: CGFloat = 8
-    private static let skipToStartGap: CGFloat = 8
 
     // MARK: - 初始化
 
     init(state: AppState) {
         self.state = state
-        startButton = ButtonFactory.primary("开始", target: nil, action: #selector(TypingPageView.startTapped))
-        skipButton = ButtonFactory.ghost("跳过", target: nil, action: #selector(TypingPageView.skipTapped))
+        startButton = ButtonFactory.primary("Start", target: nil, action: #selector(TypingPageView.startTapped))
         super.init(frame: .zero)
         startButton.target = self
-        skipButton.target = self
         keyboardCatcher.onKey = { [weak self] char in self?.handleKey(char) }
         setupLayout()
         populateDecks()
@@ -345,7 +343,6 @@ final class TypingPageView: NSView {
             toolbarCard.addSubview(button)
             iconButtons.append(button)
         }
-        toolbarCard.addSubview(skipButton)
         toolbarCard.addSubview(startButton)
 
         // 中间界面
@@ -357,7 +354,8 @@ final class TypingPageView: NSView {
         addSubview(translationLabel)
         addSubview(hintLabel)
 
-        // 毛玻璃遮罩：铺满整页（无边框），材质与窗口背景一致，工具栏/统计浮在其上
+        // 毛玻璃：仅覆盖单词区，模糊背后的单词/音标/释义，"按任意键开始"文字清晰浮于其上
+        // 用渐变 mask 让上下边缘柔和过渡，看不出方框边界（对齐 qwerty backdrop-blur）
         overlayView.material = .popover
         overlayView.blendingMode = .withinWindow
         overlayView.state = .active
@@ -365,10 +363,11 @@ final class TypingPageView: NSView {
         overlayView.layer?.cornerRadius = 0
         overlayView.addSubview(overlayLabel)
         addSubview(overlayView)
-        // 工具栏和底部统计必须在遮罩之上
-        addSubview(toolbarCard, positioned: .above, relativeTo: overlayView)
-        addSubview(progressBar, positioned: .above, relativeTo: overlayView)
-        addSubview(statCard, positioned: .above, relativeTo: overlayView)
+
+        // 离开窗口/页面时自动暂停（qwerty 行为）
+        NotificationCenter.default.addObserver(forName: NSWindow.didResignKeyNotification, object: nil, queue: .main) { [weak self] _ in
+            self?.autoPauseIfNeeded()
+        }
 
         // 底部
         addSubview(progressBar)
@@ -425,7 +424,8 @@ final class TypingPageView: NSView {
         let zoneBottom = h - bottomGap - cardH - gap - progressH - gap
         let zoneH = max(zoneBottom - topEdge, 200)
         let blockH: CGFloat = 90 + 10 + 22 + 8 + 28 + 6 + 16
-        var y = topEdge + (zoneH - blockH) / 2
+        let wordBlockTop = topEdge + (zoneH - blockH) / 2
+        var y = wordBlockTop
         wordLabel.frame = CGRect(x: 48, y: y, width: 600, height: 90)
         y += 90 + 10
         phoneticLabel.frame = CGRect(x: 60, y: y, width: 576, height: 22)
@@ -434,9 +434,20 @@ final class TypingPageView: NSView {
         y += 28 + 6
         hintLabel.frame = CGRect(x: 60, y: y, width: 576, height: 16)
 
-        // 遮罩铺满整页，无边框；"按任意键开始"文字定位到单词区中心
-        overlayView.frame = bounds
-        overlayLabel.frame = CGRect(x: 0, y: topEdge + (zoneH - 36) / 2, width: 696, height: 36)
+        // 毛玻璃覆盖整个单词区（单词+音标+释义+提示），上下各留 24pt 缓冲
+        let blurTop = max(wordBlockTop - 24, topEdge)
+        let blurBottom = min(y + 16 + 24, zoneBottom)
+        overlayView.frame = CGRect(x: 0, y: blurTop, width: 696, height: blurBottom - blurTop)
+        // 渐变 mask：上下边缘透明→中间不透明，消除模糊硬边界
+        let mask = CAGradientLayer()
+        mask.frame = overlayView.bounds
+        mask.colors = [NSColor.clear.cgColor, NSColor.black.cgColor, NSColor.black.cgColor, NSColor.clear.cgColor]
+        mask.locations = [0, 0.12, 0.88, 1]
+        mask.startPoint = CGPoint(x: 0.5, y: 0)
+        mask.endPoint = CGPoint(x: 0.5, y: 1)
+        overlayView.layer?.mask = mask
+        // "按任意键开始/继续"文字定位到单词区偏下（qwerty 样式：模糊单词下方）
+        overlayLabel.frame = CGRect(x: 0, y: (blurBottom - blurTop) * 0.62, width: 696, height: 36)
 
         dimView.frame = bounds
         resultCard.frame = CGRect(x: 108, y: max((h - 400) / 2, 60), width: 480, height: 400)
@@ -451,8 +462,7 @@ final class TypingPageView: NSView {
             + CGFloat(max(iconButtons.count - 1, 0)) * Self.iconGap
 
         let contentW = deckW + Self.textGap + chapterW + Self.textGap + accentW
-            + Self.textToIconsGap + iconsW + Self.iconsToSkipGap + Self.skipWidth
-            + Self.skipToStartGap + Self.startWidth
+            + Self.textToIconsGap + iconsW + Self.iconsToStartGap + Self.startWidth
         let cardW = contentW + Self.cardPadding * 2
         let cardX = (696 - cardW) / 2
 
@@ -467,10 +477,8 @@ final class TypingPageView: NSView {
         x += accentW + Self.textToIconsGap
         for (index, button) in iconButtons.enumerated() {
             button.frame = CGRect(x: x, y: 11, width: Self.iconSize, height: Self.iconSize)
-            x += Self.iconSize + (index < iconButtons.count - 1 ? Self.iconGap : Self.iconsToSkipGap)
+            x += Self.iconSize + (index < iconButtons.count - 1 ? Self.iconGap : Self.iconsToStartGap)
         }
-        skipButton.frame = CGRect(x: x, y: 8, width: Self.skipWidth, height: 28)
-        x += Self.skipWidth + Self.skipToStartGap
         startButton.frame = CGRect(x: x, y: 8, width: Self.startWidth, height: 28)
     }
 
@@ -515,9 +523,72 @@ final class TypingPageView: NSView {
         return Array(words[start..<end])
     }
 
-    @objc private func startTapped() { startSession() }
+    @objc private func startTapped() {
+        if !hasStartedTyping {
+            // 未开始：Start 按钮 = 开始会话（重置后开始）
+            startSession()
+            hasStartedTyping = true
+            sessionStart = Date()
+            accumulatedElapsed = 0
+            isPaused = false
+            startTicker()
+            updateStartButton()
+            render()
+        } else if isPaused {
+            // 暂停中：恢复
+            resumeSession()
+        } else {
+            // 进行中：暂停
+            pauseSession()
+        }
+    }
 
-    @objc private func skipTapped() { skipCurrentWord() }
+    /// 暂停：停止计时、显示模糊遮罩、按钮变 Pause
+    private func pauseSession() {
+        guard hasStartedTyping && !isPaused else { return }
+        isPaused = true
+        accumulatedElapsed += Date().timeIntervalSince(sessionStart)
+        stopTicker()
+        overlayLabel.stringValue = "按任意键继续"
+        overlayView.isHidden = false
+        updateStartButton()
+    }
+
+    /// 恢复：继续计时、隐藏遮罩、按钮变回 Start（进行中显示 Pause）
+    private func resumeSession() {
+        guard hasStartedTyping && isPaused else { return }
+        isPaused = false
+        sessionStart = Date()
+        startTicker()
+        overlayView.isHidden = true
+        overlayLabel.stringValue = "按任意键开始"
+        updateStartButton()
+        render()
+    }
+
+    /// 离开窗口/页面时自动暂停
+    private func autoPauseIfNeeded() {
+        if hasStartedTyping && !isPaused && resultCard.isHidden {
+            pauseSession()
+        }
+    }
+
+    /// 离开页面时自动暂停（view 从 window 移除）
+    override func viewWillMove(toWindow newWindow: NSWindow?) {
+        super.viewWillMove(toWindow: newWindow)
+        if newWindow == nil { autoPauseIfNeeded() }
+    }
+
+    /// 更新 Start/Pause 按钮外观：进行中=灰色 Pause，未开始/暂停=紫色 Start
+    private func updateStartButton() {
+        if hasStartedTyping && !isPaused {
+            startButton.title = "Pause"
+            startButton.layer?.backgroundColor = Theme.textSecondary.withAlphaComponent(0.4).cgColor
+        } else {
+            startButton.title = "Start"
+            startButton.layer?.backgroundColor = Theme.primary.cgColor
+        }
+    }
 
     // MARK: - 工具栏图标功能
 
@@ -526,7 +597,7 @@ final class TypingPageView: NSView {
         switch index {
         case 0: toggleSound()             // 音效
         case 1: cycleLoopTimes()          // 循环
-        case 2: cycleDictation()          // 默写
+        case 2: showDictationPanel(sender) // 默写（下拉面板）
         case 3: toggleTranslation()       // 释义显示
         case 4: showErrorBook(sender)     // 错题本
         case 5: onNavigate?(.stats)       // 数据统计
@@ -546,16 +617,87 @@ final class TypingPageView: NSView {
         iconButtons[0].toolTip = soundEnabled ? "音效：开" : "音效：关"
     }
 
-    // MARK: - 默写模式
+    // MARK: - 默写模式下拉面板（qwerty WordDictationSwitcher）
 
-    private func cycleDictation() {
-        dictationMode = dictationMode.next()
+    private func showDictationPanel(_ sender: NSButton) {
+        let popover = NSPopover()
+        popover.behavior = .transient
+        let content = NSViewController()
+        let view = NSView(frame: CGRect(x: 0, y: 0, width: 240, height: 130))
+        content.view = view
+
+        // 开关
+        let toggle = NSSwitch()
+        toggle.state = dictationMode != .off ? .on : .off
+        toggle.frame = CGRect(x: 16, y: 96, width: 40, height: 22)
+        toggle.target = self
+        toggle.action = #selector(dictationToggleChanged(_:))
+        view.addSubview(toggle)
+
+        let toggleLabel = LabelFactory.label("开关默写模式", font: .systemFont(ofSize: 13, weight: .medium))
+        toggleLabel.frame = CGRect(x: 64, y: 98, width: 120, height: 18)
+        view.addSubview(toggleLabel)
+
+        let statusLabel = LabelFactory.label(dictationMode != .off ? "默写已开启" : "默写已关闭",
+                                             font: .systemFont(ofSize: 11), color: Theme.textSecondary)
+        statusLabel.frame = CGRect(x: 160, y: 98, width: 70, height: 18)
+        statusLabel.tag = 99
+        view.addSubview(statusLabel)
+
+        // 模式下拉
+        let modeLabel = LabelFactory.label("默写模式", font: .systemFont(ofSize: 12), color: Theme.textSecondary)
+        modeLabel.frame = CGRect(x: 16, y: 64, width: 80, height: 18)
+        view.addSubview(modeLabel)
+
+        let popup = NSPopUpButton(frame: CGRect(x: 16, y: 32, width: 208, height: 26))
+        popup.addItems(withTitles: ["全部隐藏", "隐藏元音", "隐藏辅音", "随机隐藏"])
+        let modeMap: [DictationMode] = [.hideAll, .hideVowels, .hideConsonants, .randomHide]
+        if let idx = modeMap.firstIndex(of: dictationMode) { popup.selectItem(at: idx) }
+        popup.target = self
+        popup.action = #selector(dictationModeChanged(_:))
+        popup.isEnabled = dictationMode != .off
+        view.addSubview(popup)
+
+        popover.contentViewController = content
+        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+    }
+
+    @objc private func dictationToggleChanged(_ sender: NSSwitch) {
+        if sender.state == .on {
+            if dictationMode == .off { dictationMode = .hideAll }
+        } else {
+            dictationMode = .off
+        }
+        updateDictationIcon()
+        // 更新状态文字
+        if let popover = sender.window?.contentViewController as? NSViewController,
+           let status = popover.view.viewWithTag(99) as? NSTextField {
+            status.stringValue = dictationMode != .off ? "默写已开启" : "默写已关闭"
+        }
+        // 更新下拉可用性
+        if let popover = sender.window?.contentViewController as? NSViewController,
+           let popup = popover.view.subviews.first(where: { $0 is NSPopUpButton }) as? NSPopUpButton {
+            popup.isEnabled = dictationMode != .off
+        }
+        render()
+    }
+
+    @objc private func dictationModeChanged(_ sender: NSPopUpButton) {
+        let modes: [DictationMode] = [.hideAll, .hideVowels, .hideConsonants, .randomHide]
+        let idx = sender.indexOfSelectedItem
+        if modes.indices.contains(idx) {
+            dictationMode = modes[idx]
+            updateDictationIcon()
+            render()
+        }
+    }
+
+    private func updateDictationIcon() {
         let isOff = dictationMode == .off
         iconButtons[2].setIcon(isOff ? "heroicons_eye-slash-solid" : "heroicons_eye-solid",
                                fallbackSymbol: isOff ? "eye.slash.fill" : "eye.fill",
                                active: !isOff)
-        iconButtons[2].toolTip = dictationMode.label
-        render()
+        iconButtons[2].toolTip = isOff ? "默写：关闭" : "默写模式"
     }
 
     /// 单词循环：1 → 3 → 5 → 8 → ∞ → 1
@@ -689,7 +831,7 @@ final class TypingPageView: NSView {
         countLabel.frame = CGRect(x: 16, y: 76, width: 200, height: 18)
         view.addSubview(countLabel)
 
-        let hint = LabelFactory.label("快捷键：Enter 开始 ｜ Tab 跳过 ｜ Ctrl+V 默写", font: .systemFont(ofSize: 10),
+        let hint = LabelFactory.label("快捷键：Enter 开始/暂停 ｜ Tab 跳过 ｜ 任意键恢复", font: .systemFont(ofSize: 10),
                                       color: Theme.textTertiary)
         hint.frame = CGRect(x: 16, y: 16, width: 250, height: 36)
         hint.cell?.wraps = true
@@ -725,12 +867,16 @@ final class TypingPageView: NSView {
         sessionWords = words
         service.startSession(words: words)
         hasStartedTyping = false
+        isPaused = false
+        accumulatedElapsed = 0
         sessionStart = Date()
         wrongWords.removeAll()
         wrongWordSet.removeAll()
         resultCard.isHidden = true
         dimView.isHidden = true
         stopTicker()
+        overlayLabel.stringValue = "按任意键开始"
+        updateStartButton()
         render()
         activate()
     }
@@ -751,12 +897,35 @@ final class TypingPageView: NSView {
     // MARK: - 输入处理
 
     private func handleKey(_ char: Character) {
-        if !resultCard.isHidden { startSession(); return }
+        if !resultCard.isHidden {
+            // 结束面板：任意键开始新一组
+            startSession()
+            hasStartedTyping = true
+            sessionStart = Date()
+            accumulatedElapsed = 0
+            isPaused = false
+            startTicker()
+            updateStartButton()
+            render()
+            return
+        }
+        // Enter 键：开始/暂停切换（qwerty 行为）
+        if char == "\r" || char == "\n" {
+            startTapped()
+            return
+        }
+        // 暂停中：任意字母键恢复
+        if isPaused {
+            resumeSession()
+            guard char.isLetter else { return }
+        }
         if char == "\t" { skipCurrentWord(); return }
         if !hasStartedTyping {
             hasStartedTyping = true
-            sessionStart = Date()  // 第一次按键才开始计时（qwerty 行为）
+            sessionStart = Date()
+            accumulatedElapsed = 0
             startTicker()
+            updateStartButton()
             guard char.isLetter else { render(); return }
         }
         guard char.isLetter else { return }
@@ -826,10 +995,15 @@ final class TypingPageView: NSView {
             stat.keyPressCorrect += s.correctKeyPresses
             stat.keyPressTotal += s.totalKeyPresses
         }, now: Date())
-        let elapsed = max(Date().timeIntervalSince(sessionStart), 1)
+        // 最终用时 = 累计 + 当前段
+        let currentSegment = hasStartedTyping ? Date().timeIntervalSince(sessionStart) : 0
+        let elapsed = max(accumulatedElapsed + currentSegment, 1)
         let minutes = elapsed / 60
         let wpm = Int((Double(s.correctKeyPresses) / 5.0 / minutes).rounded())
         let acc = Int((s.accuracy * 100).rounded())
+        hasStartedTyping = false
+        isPaused = false
+        updateStartButton()
         resultCard.subviews.forEach { $0.removeFromSuperview() }
         buildResultContent(wpm: wpm, acc: acc, elapsed: elapsed)
         dimView.isHidden = false
@@ -841,7 +1015,9 @@ final class TypingPageView: NSView {
     private func render() {
         guard let word = service.currentWord else { return }
         let s = service.stats
-        let elapsed = max(Date().timeIntervalSince(sessionStart), 0)
+        // 累计时间 = 暂停前累计 + 当前活跃段（暂停时不加）
+        let currentSegment = (hasStartedTyping && !isPaused) ? Date().timeIntervalSince(sessionStart) : 0
+        let elapsed = accumulatedElapsed + currentSegment
         let minutes = elapsed / 60
         let wpm = minutes > 0 ? Int((Double(s.correctKeyPresses) / 5.0 / minutes).rounded()) : 0
         translationLabel.stringValue = word.translation
@@ -854,7 +1030,8 @@ final class TypingPageView: NSView {
         progressBar.setProgress(service.progress)
         wordLabel.attributedStringValue = renderWordText(word.text)
         hintLabel.stringValue = wrongFlash ? "输入错误，本词需要重新输入" : (hasStartedTyping ? "错一个字母就要重来" : "")
-        overlayView.isHidden = hasStartedTyping || !resultCard.isHidden
+        // 遮罩：未开始 或 暂停时显示；进行中或结束时隐藏
+        overlayView.isHidden = (hasStartedTyping && !isPaused) || !resultCard.isHidden
     }
 
     private func renderWordText(_ text: String) -> NSAttributedString {
