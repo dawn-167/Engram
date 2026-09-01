@@ -1,0 +1,24 @@
+{
+  "deck": {
+    "id": "business-sentences",
+    "name": "商务与旅行",
+    "description": "职场、商务与出行场景句，连词成句巩固表达",
+    "kind": "sentence"
+  },
+  "sentences": [
+    {"id": "biz-001", "text": "I have a meeting at nine.", "translation": "我九点有个会。", "scene": "business", "level": "beginner"},
+    {"id": "biz-002", "text": "Please send me the report by Friday.", "translation": "请在周五前把报告发给我。", "scene": "business", "level": "beginner"},
+    {"id": "biz-003", "text": "Could you repeat that, please?", "translation": "您能再说一遍吗？", "scene": "business", "level": "beginner"},
+    {"id": "biz-004", "text": "Let us schedule a call for next week.", "translation": "我们约下周通个电话吧。", "scene": "business", "level": "intermediate"},
+    {"id": "biz-005", "text": "The deadline has been extended to Monday.", "translation": "截止日期已延至周一。", "scene": "business", "level": "intermediate"},
+    {"id": "biz-006", "text": "I am writing to follow up on your request.", "translation": "我写信是想跟进您的需求。", "scene": "business", "level": "advanced"},
+    {"id": "biz-007", "text": "We need to review the contract before signing.", "translation": "签署前我们需要审阅合同。", "scene": "business", "level": "advanced"},
+    {"id": "biz-008", "text": "Where is the check-in counter?", "translation": "值机柜台在哪里？", "scene": "travel", "level": "beginner"},
+    {"id": "biz-009", "text": "I would like to book a room for two nights.", "translation": "我想订一个房间，住两晚。", "scene": "travel", "level": "intermediate"},
+    {"id": "biz-010", "text": "How do I get to the nearest subway station?", "translation": "最近的地铁站怎么走？", "scene": "travel", "level": "intermediate"},
+    {"id": "biz-011", "text": "Is breakfast included in the price?", "translation": "这个价格含早餐吗？", "scene": "travel", "level": "beginner"},
+    {"id": "biz-012", "text": "Could you call a taxi for me, please?", "translation": "能帮我叫辆出租车吗？", "scene": "travel", "level": "beginner"},
+    {"id": "biz-013", "text": "My flight was delayed due to bad weather.", "translation": "我的航班因天气恶劣延误了。", "scene": "travel", "level": "advanced"},
+    {"id": "biz-014", "text": "I need an invoice for the business trip.", "translation": "我需要一张出差的发票。", "scene": "business", "level": "intermediate"}
+  ]
+}

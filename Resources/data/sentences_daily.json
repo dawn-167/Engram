@@ -1,0 +1,30 @@
+{
+  "deck": {
+    "id": "daily-sentences",
+    "name": "日常造句",
+    "description": "日常生活高频句，打乱词块后按正确语序还原",
+    "kind": "sentence"
+  },
+  "sentences": [
+    {"id": "daily-001", "text": "I would like a cup of coffee.", "translation": "我想要一杯咖啡。", "scene": "daily", "level": "beginner"},
+    {"id": "daily-002", "text": "What time do you usually wake up?", "translation": "你通常几点起床？", "scene": "daily", "level": "beginner"},
+    {"id": "daily-003", "text": "She is reading a book in the park.", "translation": "她正在公园里看书。", "scene": "daily", "level": "beginner"},
+    {"id": "daily-004", "text": "We are going to the supermarket.", "translation": "我们正要去超市。", "scene": "daily", "level": "beginner"},
+    {"id": "daily-005", "text": "Could you please close the window?", "translation": "你能把窗户关上吗？", "scene": "daily", "level": "beginner"},
+    {"id": "daily-006", "text": "The weather is really nice today.", "translation": "今天天气真好。", "scene": "daily", "level": "beginner"},
+    {"id": "daily-007", "text": "I have lived here for five years.", "translation": "我在这里住了五年了。", "scene": "daily", "level": "intermediate"},
+    {"id": "daily-008", "text": "He forgot to bring his umbrella.", "translation": "他忘了带伞。", "scene": "daily", "level": "beginner"},
+    {"id": "daily-009", "text": "Would you mind turning down the music?", "translation": "你介意把音乐调小一点吗？", "scene": "daily", "level": "intermediate"},
+    {"id": "daily-010", "text": "They have been friends since childhood.", "translation": "他们从小就是朋友。", "scene": "daily", "level": "intermediate"},
+    {"id": "daily-011", "text": "I am looking forward to the weekend.", "translation": "我盼望着周末到来。", "scene": "daily", "level": "intermediate"},
+    {"id": "daily-012", "text": "The bus arrives at the station every ten minutes.", "translation": "公交车每十分钟到站一班。", "scene": "daily", "level": "intermediate"},
+    {"id": "daily-013", "text": "She decided to take a walk after dinner.", "translation": "她决定晚饭后去散步。", "scene": "daily", "level": "intermediate"},
+    {"id": "daily-014", "text": "I cannot find my keys anywhere in the room.", "translation": "我在房间里哪儿都找不到钥匙。", "scene": "daily", "level": "intermediate"},
+    {"id": "daily-015", "text": "It took me an hour to finish the homework.", "translation": "我花了一个小时完成作业。", "scene": "daily", "level": "intermediate"},
+    {"id": "daily-016", "text": "You should drink more water on hot days.", "translation": "天热的时候你应该多喝水。", "scene": "daily", "level": "beginner"},
+    {"id": "daily-017", "text": "The movie was much better than I expected.", "translation": "这部电影比我预期的好得多。", "scene": "daily", "level": "advanced"},
+    {"id": "daily-018", "text": "We had to cancel the picnic because of the rain.", "translation": "因为下雨，我们不得不取消野餐。", "scene": "daily", "level": "advanced"},
+    {"id": "daily-019", "text": "Learning a language requires constant practice.", "translation": "学习一门语言需要持续练习。", "scene": "daily", "level": "advanced"},
+    {"id": "daily-020", "text": "I will pick you up at the airport tomorrow morning.", "translation": "我明天早上到机场接你。", "scene": "daily", "level": "advanced"}
+  ]
+}

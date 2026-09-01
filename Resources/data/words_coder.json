@@ -1,0 +1,42 @@
+{
+  "deck": {
+    "id": "coder-core",
+    "name": "程序员英语",
+    "description": "编程工作高频英文词汇，边敲键盘边记单词",
+    "kind": "word"
+  },
+  "words": [
+    {"id": "coder-variable", "text": "variable", "phonetic": "/ˈveəriəbl/", "translation": "n. 变量", "example": "Declare a variable first.", "exampleZh": "先声明一个变量。", "deck": "coder-core"},
+    {"id": "coder-function", "text": "function", "phonetic": "/ˈfʌŋkʃn/", "translation": "n. 函数；功能", "example": "This function returns zero.", "exampleZh": "这个函数返回零。", "deck": "coder-core"},
+    {"id": "coder-compile", "text": "compile", "phonetic": "/kəmˈpaɪl/", "translation": "v. 编译", "example": "The project compiles cleanly.", "exampleZh": "项目编译无警告。", "deck": "coder-core"},
+    {"id": "coder-debug", "text": "debug", "phonetic": "/ˌdiːˈbʌɡ/", "translation": "v. 调试；排错", "example": "Let us debug the crash.", "exampleZh": "我们来调试这次崩溃。", "deck": "coder-core"},
+    {"id": "coder-deploy", "text": "deploy", "phonetic": "/dɪˈplɔɪ/", "translation": "v. 部署", "example": "We deploy every Friday.", "exampleZh": "我们每周五部署。", "deck": "coder-core"},
+    {"id": "coder-commit", "text": "commit", "phonetic": "/kəˈmɪt/", "translation": "v./n. 提交（代码）", "example": "Commit your changes now.", "exampleZh": "现在提交你的改动。", "deck": "coder-core"},
+    {"id": "coder-branch", "text": "branch", "phonetic": "/brɑːntʃ/", "translation": "n. 分支", "example": "Create a feature branch.", "exampleZh": "创建一个功能分支。", "deck": "coder-core"},
+    {"id": "coder-merge", "text": "merge", "phonetic": "/mɜːdʒ/", "translation": "v. 合并", "example": "Merge the branch into main.", "exampleZh": "把分支合并到主干。", "deck": "coder-core"},
+    {"id": "coder-request", "text": "request", "phonetic": "/rɪˈkwest/", "translation": "n./v. 请求", "example": "Send a GET request.", "exampleZh": "发送一个 GET 请求。", "deck": "coder-core"},
+    {"id": "coder-response", "text": "response", "phonetic": "/rɪˈspɒns/", "translation": "n. 响应", "example": "The response is empty.", "exampleZh": "响应为空。", "deck": "coder-core"},
+    {"id": "coder-database", "text": "database", "phonetic": "/ˈdeɪtəbeɪs/", "translation": "n. 数据库", "example": "Query the database.", "exampleZh": "查询数据库。", "deck": "coder-core"},
+    {"id": "coder-schema", "text": "schema", "phonetic": "/ˈskiːmə/", "translation": "n. 模式；结构", "example": "Validate the schema.", "exampleZh": "校验数据结构。", "deck": "coder-core"},
+    {"id": "coder-async", "text": "asynchronous", "phonetic": "/eɪˈsɪŋkrənəs/", "translation": "adj. 异步的", "example": "Use an asynchronous call.", "exampleZh": "使用异步调用。", "deck": "coder-core"},
+    {"id": "coder-thread", "text": "thread", "phonetic": "/θred/", "translation": "n. 线程", "example": "Spawn a new thread.", "exampleZh": "开启一个新线程。", "deck": "coder-core"},
+    {"id": "coder-cache", "text": "cache", "phonetic": "/kæʃ/", "translation": "n. 缓存", "example": "Clear the cache first.", "exampleZh": "先清缓存。", "deck": "coder-core"},
+    {"id": "coder-queue", "text": "queue", "phonetic": "/kjuː/", "translation": "n. 队列 v. 排队", "example": "Jobs wait in a queue.", "exampleZh": "任务在队列中等待。", "deck": "coder-core"},
+    {"id": "coder-refactor", "text": "refactor", "phonetic": "/ˌriːˈfæktə/", "translation": "v. 重构", "example": "Refactor the legacy code.", "exampleZh": "重构遗留代码。", "deck": "coder-core"},
+    {"id": "coder-dependency", "text": "dependency", "phonetic": "/dɪˈpendənsi/", "translation": "n. 依赖", "example": "Remove unused dependencies.", "exampleZh": "移除未使用的依赖。", "deck": "coder-core"},
+    {"id": "coder-framework", "text": "framework", "phonetic": "/ˈfreɪmwɜːk/", "translation": "n. 框架", "example": "Choose a stable framework.", "exampleZh": "选择稳定的框架。", "deck": "coder-core"},
+    {"id": "coder-endpoint", "text": "endpoint", "phonetic": "/ˈendpɔɪnt/", "translation": "n. 接口端点", "example": "Test each API endpoint.", "exampleZh": "测试每个接口端点。", "deck": "coder-core"},
+    {"id": "coder-payload", "text": "payload", "phonetic": "/ˈpeɪləʊd/", "translation": "n. 载荷；报文数据", "example": "Parse the JSON payload.", "exampleZh": "解析 JSON 报文。", "deck": "coder-core"},
+    {"id": "coder-token", "text": "token", "phonetic": "/ˈtəʊkən/", "translation": "n. 令牌；标记", "example": "Attach the auth token.", "exampleZh": "附上鉴权令牌。", "deck": "coder-core"},
+    {"id": "coder-instance", "text": "instance", "phonetic": "/ˈɪnstəns/", "translation": "n. 实例", "example": "Create a class instance.", "exampleZh": "创建一个类实例。", "deck": "coder-core"},
+    {"id": "coder-inherit", "text": "inherit", "phonetic": "/ɪnˈherɪt/", "translation": "v. 继承", "example": "Subclasses inherit methods.", "exampleZh": "子类继承方法。", "deck": "coder-core"},
+    {"id": "coder-iterate", "text": "iterate", "phonetic": "/ˈɪtəreɪt/", "translation": "v. 迭代；遍历", "example": "Iterate over the list.", "exampleZh": "遍历这个列表。", "deck": "coder-core"},
+    {"id": "coder-null", "text": "nullable", "phonetic": "/ˈnʌləbl/", "translation": "adj. 可空的", "example": "Handle nullable values.", "exampleZh": "处理可空值。", "deck": "coder-core"},
+    {"id": "coder-latency", "text": "latency", "phonetic": "/ˈleɪtənsi/", "translation": "n. 延迟", "example": "Reduce network latency.", "exampleZh": "降低网络延迟。", "deck": "coder-core"},
+    {"id": "coder-throughput", "text": "throughput", "phonetic": "/ˈθruːpʊt/", "translation": "n. 吞吐量", "example": "Measure system throughput.", "exampleZh": "测量系统吞吐量。", "deck": "coder-core"},
+    {"id": "coder-repository", "text": "repository", "phonetic": "/rɪˈpɒzətri/", "translation": "n. 仓库", "example": "Clone the repository.", "exampleZh": "克隆代码仓库。", "deck": "coder-core"},
+    {"id": "coder-pipeline", "text": "pipeline", "phonetic": "/ˈpaɪplaɪn/", "translation": "n. 流水线", "example": "The pipeline failed twice.", "exampleZh": "流水线失败了两次。", "deck": "coder-core"},
+    {"id": "coder-rollback", "text": "rollback", "phonetic": "/ˈrəʊlbæk/", "translation": "n./v. 回滚", "example": "Rollback the release.", "exampleZh": "回滚这次发布。", "deck": "coder-core"},
+    {"id": "coder-scalable", "text": "scalable", "phonetic": "/ˈskeɪləbl/", "translation": "adj. 可扩展的", "example": "Design a scalable service.", "exampleZh": "设计可扩展的服务。", "deck": "coder-core"}
+  ]
+}

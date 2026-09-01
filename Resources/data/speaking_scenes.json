@@ -1,0 +1,30 @@
+{
+  "deck": {
+    "id": "speaking-scenes",
+    "name": "口语场景",
+    "description": "覆盖问候、点餐、面试、旅行、办公的跟读与发音评测句",
+    "kind": "speaking"
+  },
+  "sentences": [
+    {"id": "speak-001", "text": "Nice to meet you.", "translation": "很高兴认识你。", "scene": "greeting", "level": "beginner"},
+    {"id": "speak-002", "text": "How is everything going?", "translation": "最近一切都好吗？", "scene": "greeting", "level": "beginner"},
+    {"id": "speak-003", "text": "Long time no see, my friend.", "translation": "好久不见，我的朋友。", "scene": "greeting", "level": "beginner"},
+    {"id": "speak-004", "text": "I hope you are having a great day.", "translation": "希望你今天过得愉快。", "scene": "greeting", "level": "intermediate"},
+    {"id": "speak-005", "text": "Could I have the menu, please?", "translation": "请给我菜单好吗？", "scene": "restaurant", "level": "beginner"},
+    {"id": "speak-006", "text": "I would like to order a steak.", "translation": "我想点一份牛排。", "scene": "restaurant", "level": "beginner"},
+    {"id": "speak-007", "text": "Can we have the bill, please?", "translation": "请给我们结账好吗？", "scene": "restaurant", "level": "beginner"},
+    {"id": "speak-008", "text": "I am allergic to seafood and peanuts.", "translation": "我对海鲜和花生过敏。", "scene": "restaurant", "level": "intermediate"},
+    {"id": "speak-009", "text": "Tell me a little about yourself.", "translation": "简单介绍一下你自己吧。", "scene": "interview", "level": "intermediate"},
+    {"id": "speak-010", "text": "What are your greatest strengths?", "translation": "你最大的优势是什么？", "scene": "interview", "level": "intermediate"},
+    {"id": "speak-011", "text": "Why do you want to work for our company?", "translation": "你为什么想为我们公司工作？", "scene": "interview", "level": "advanced"},
+    {"id": "speak-012", "text": "I have three years of relevant experience.", "translation": "我有三年相关经验。", "scene": "interview", "level": "intermediate"},
+    {"id": "speak-013", "text": "Where can I find the boarding gate?", "translation": "我在哪里能找到登机口？", "scene": "travel", "level": "beginner"},
+    {"id": "speak-014", "text": "I would like a window seat, please.", "translation": "请给我一个靠窗的座位。", "scene": "travel", "level": "beginner"},
+    {"id": "speak-015", "text": "Could you take a photo for us?", "translation": "能帮我们拍张照吗？", "scene": "travel", "level": "beginner"},
+    {"id": "speak-016", "text": "I think I lost my passport somewhere.", "translation": "我好像把护照弄丢了。", "scene": "travel", "level": "advanced"},
+    {"id": "speak-017", "text": "Let us go over the action items.", "translation": "我们过一遍待办事项吧。", "scene": "office", "level": "intermediate"},
+    {"id": "speak-018", "text": "I will send you the notes after the meeting.", "translation": "会后我把会议纪要发给你。", "scene": "office", "level": "intermediate"},
+    {"id": "speak-019", "text": "Could we reschedule the appointment to Thursday?", "translation": "我们能把约见改到周四吗？", "scene": "office", "level": "advanced"},
+    {"id": "speak-020", "text": "I am in charge of the product roadmap.", "translation": "我负责产品路线图。", "scene": "office", "level": "advanced"}
+  ]
+}
