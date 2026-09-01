@@ -9,7 +9,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate {
     // MARK: - 常量
 
     private enum Const {
-        static let windowSize = NSSize(width: 940, height: 680)
+        static let windowSize = NSSize(width: 940, height: 640)
         static let minWindowSize = NSSize(width: 940, height: 640)
         static let hotKeySignature = OSType(0x454E) // "EN"
     }

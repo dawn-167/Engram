@@ -18,9 +18,17 @@ protocol SpeechServiceProtocol {
     /// - Parameters:
     ///   - text: 英文文本
     ///   - rate: AVSpeechUtteranceDefaultSpeechRate 基准下的语速倍率（0.3~0.6 适合学习）
-    func speak(_ text: String, rate: Float)
+    ///   - locale: BCP-47 语言标签（en-US 美音 / en-GB 英音）；传空串表示不朗读（关闭发音）
+    func speak(_ text: String, rate: Float, locale: String)
     /// 停止朗读
     func stop()
+}
+
+extension SpeechServiceProtocol {
+    /// 便捷方法：默认美音
+    func speak(_ text: String, rate: Float) {
+        speak(text, rate: rate, locale: "en-US")
+    }
 }
 
 final class SpeechService: NSObject, SpeechServiceProtocol, AVSpeechSynthesizerDelegate {
@@ -112,10 +120,12 @@ final class SpeechService: NSObject, SpeechServiceProtocol, AVSpeechSynthesizerD
 
     // MARK: - 公开方法
 
-    func speak(_ text: String, rate: Float) {
+    func speak(_ text: String, rate: Float, locale: String) {
+        guard !locale.isEmpty else { return } // 关闭发音：不朗读
         stop()
         let utterance = AVSpeechUtterance(string: text)
-        utterance.voice = bestVoice ?? AVSpeechSynthesisVoice(language: "en-US")
+        // 优先按所选口音（美音/英音）选语音，找不到则退回最佳嗓音
+        utterance.voice = AVSpeechSynthesisVoice(language: locale) ?? bestVoice ?? AVSpeechSynthesisVoice(language: "en-US")
         // rate 以系统默认语速为基准换算
         utterance.rate = rate * AVSpeechUtteranceDefaultSpeechRate
         utterance.pitchMultiplier = 1.0

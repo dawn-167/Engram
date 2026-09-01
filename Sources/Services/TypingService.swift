@@ -16,6 +16,7 @@ enum TypingFeedback: Equatable {
     case accepted
     case wrongAndReset
     case wordCompleted
+    case wordRepeated
     case sessionFinished
 }
 
@@ -67,6 +68,16 @@ final class TypingService: TypingServiceProtocol {
     private var hadWrongThisWord = false
     private var sessionStart = Date()
     private(set) var stats = TypingSessionStats()
+    /// 每个单词循环输入次数（qwerty 单词循环：1=不循环；Int.max=无限）
+    var loopTimes = 1
+    private var loopRemaining = 0
+    private var advancedWords = 0
+
+    /// 进度（已前进单词 / 总单词）
+    var progress: Double {
+        guard !queue.isEmpty else { return 0 }
+        return Double(advancedWords) / Double(queue.count)
+    }
 
     var currentWord: WordEntry? {
         guard index < queue.count else { return nil }
@@ -80,6 +91,8 @@ final class TypingService: TypingServiceProtocol {
         index = 0
         typedLength = 0
         hadWrongThisWord = false
+        advancedWords = 0
+        loopRemaining = max(1, loopTimes)
         stats = TypingSessionStats(totalWords: words.count)
         sessionStart = Date()
     }
@@ -126,10 +139,19 @@ final class TypingService: TypingServiceProtocol {
         stats.completedWords += 1
         if hadWrongThisWord { stats.errorWords += 1 }
         stats.elapsedSeconds = Date().timeIntervalSince(sessionStart)
+        loopRemaining -= 1
+        if loopRemaining > 0 {
+            // 循环模式：继续重复当前词（不计入进度）
+            typedLength = 0
+            hadWrongThisWord = false
+            return .wordRepeated
+        }
         return advance()
     }
 
     private func advance() -> TypingFeedback {
+        advancedWords += 1
+        loopRemaining = max(1, loopTimes)
         index += 1
         typedLength = 0
         hadWrongThisWord = false

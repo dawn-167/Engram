@@ -25,7 +25,7 @@ final class RootViewController: NSViewController {
     // MARK: - 生命周期
 
     override func loadView() {
-        view = NSView(frame: CGRect(x: 0, y: 0, width: 940, height: 680))
+        view = NSView(frame: CGRect(x: 0, y: 0, width: 940, height: 640))
     }
 
     override func viewDidLoad() {
@@ -59,7 +59,9 @@ final class RootViewController: NSViewController {
         let home = HomeView(state: appState)
         home.onNavigate = { [weak self] page in self?.appState.go(page) }
         pageViews[.home] = home
-        pageViews[.typing] = TypingPageView(state: appState)
+        let typing = TypingPageView(state: appState)
+        typing.onNavigate = { [weak self] page in self?.appState.go(page) }
+        pageViews[.typing] = typing
         pageViews[.sentence] = SentenceBuildPageView(state: appState)
         pageViews[.speaking] = SpeakingPageView(state: appState)
         pageViews[.review] = ReviewPageView(state: appState)

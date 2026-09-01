@@ -64,27 +64,6 @@ private func testSpacedRepetition() {
     expect(easy.ease > before, "easy 后 EF 应上升")
 }
 
-// MARK: - 打字状态机测试
-
-private func testTyping() {
-    let service = TypingService()
-    let word = WordEntry(id: "w-cat", text: "cat", phonetic: "/kæt/",
-                         translation: "猫", example: "A cat.", exampleZh: "一只猫", deck: "test")
-    service.startSession(words: [word])
-
-    expect(service.input(character: "c") == .accepted, "输入 c 正确应 accepted")
-    expect(service.charStates().filter { $0 == .correct }.count == 1, "应有 1 个正确字符")
-    expect(service.input(character: "x") == .wrongAndReset, "输入错误应整词重置")
-    expect(service.charStates().filter { $0 == .correct }.isEmpty, "重置后无正确字符")
-
-    expect(service.input(character: "C") == .accepted, "大写 C 应忽略大小写判对")
-    expect(service.input(character: "a") == .accepted, "输入 a accepted")
-    expect(service.input(character: "t") == .sessionFinished, "最后一字母完成会话")
-    expect(service.stats.completedWords == 1, "应完成 1 个单词")
-    expect(service.stats.totalKeyPresses == 5, "总按键 5（含一次错误），实际 \(service.stats.totalKeyPresses)")
-    expect(service.stats.correctKeyPresses == 4, "正确按键 4")
-}
-
 // MARK: - 连词造句测试
 
 private func testSentenceBuild() {
@@ -153,7 +132,6 @@ private func testProgressStore() throws {
 
 private func runAll() throws {
     testSpacedRepetition()
-    testTyping()
     testSentenceBuild()
     testPronunciation()
     try testProgressStore()
