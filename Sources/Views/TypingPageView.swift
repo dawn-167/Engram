@@ -68,14 +68,16 @@ private final class TextMenuButton: NSButton {
 
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
-        NSCursor.pointingHand.push()
         updateAppearance()
     }
 
     override func mouseExited(with event: NSEvent) {
         isHovered = false
-        NSCursor.pop()
         updateAppearance()
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
     }
 }
 
@@ -144,14 +146,16 @@ private final class ToolbarIconButton: NSButton {
 
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
-        NSCursor.pointingHand.push()
         updateAppearance()
     }
 
     override func mouseExited(with event: NSEvent) {
         isHovered = false
-        NSCursor.pop()
         updateAppearance()
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
     }
 }
 
@@ -654,6 +658,10 @@ final class TypingPageView: NSView {
             bg.layer?.cornerRadius = 6
             bg.layer?.borderWidth = 1
             bg.layer?.borderColor = Theme.divider.cgColor
+            bg.layer?.shadowColor = NSColor.black.cgColor
+            bg.layer?.shadowOpacity = 0.08
+            bg.layer?.shadowRadius = 4
+            bg.layer?.shadowOffset = CGSize(width: 0, height: 1)
             bg.layer?.backgroundColor = NSColor(name: nil) { app in
                 app.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
                     ? NSColor(white: 0.22, alpha: 1)
@@ -688,20 +696,8 @@ final class TypingPageView: NSView {
                                    width: 12, height: 10)
         }
 
-        override func updateTrackingAreas() {
-            super.updateTrackingAreas()
-            trackingAreas.forEach { removeTrackingArea($0) }
-            addTrackingArea(NSTrackingArea(rect: bounds,
-                                           options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-                                           owner: self))
-        }
-
-        override func mouseEntered(with event: NSEvent) {
-            NSCursor.pointingHand.push()
-        }
-
-        override func mouseExited(with event: NSEvent) {
-            NSCursor.pop()
+        override func resetCursorRects() {
+            addCursorRect(bounds, cursor: .pointingHand)
         }
 
         override func mouseDown(with event: NSEvent) {

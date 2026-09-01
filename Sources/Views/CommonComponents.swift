@@ -74,14 +74,16 @@ class HoverView: NSView {
 
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
-        NSCursor.pointingHand.push()
         hoverLayer.opacity = 1
     }
 
     override func mouseExited(with event: NSEvent) {
         isHovered = false
-        NSCursor.pop()
         hoverLayer.opacity = 0
+    }
+
+    override func resetCursorRects() {
+        addCursorRect(bounds, cursor: .pointingHand)
     }
 
     override func mouseUp(with event: NSEvent) {
@@ -91,25 +93,12 @@ class HoverView: NSView {
 }
 
 /// 悬停时显示小手光标的按钮（所有可点击按钮的基类）
+/// 用 resetCursorRects 而非 push/pop，避免光标堆栈不平衡导致回不到箭头
 class HandCursorButton: NSButton {
-    private var ta: NSTrackingArea?
-
-    override func layout() {
-        super.layout()
-        if let ta { removeTrackingArea(ta) }
-        let new = NSTrackingArea(rect: bounds,
-                                 options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-                                 owner: self)
-        addTrackingArea(new)
-        ta = new
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        if isEnabled { NSCursor.pointingHand.push() }
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        NSCursor.pop()
+    override func resetCursorRects() {
+        if isEnabled {
+            addCursorRect(bounds, cursor: .pointingHand)
+        }
     }
 }
 
@@ -124,6 +113,10 @@ enum ButtonFactory {
         button.wantsLayer = true
         button.layer?.backgroundColor = Theme.primary.cgColor
         button.layer?.cornerRadius = 8
+        button.layer?.shadowColor = Theme.primary.cgColor
+        button.layer?.shadowOpacity = 0.35
+        button.layer?.shadowRadius = 6
+        button.layer?.shadowOffset = CGSize(width: 0, height: 2)
         button.isBordered = false
         button.focusRingType = .none
         return button
