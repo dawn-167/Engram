@@ -22,6 +22,9 @@ final class SpeakingPageView: NSView {
     private let detailLabel = LabelFactory.label("", font: Theme.body(12), color: Theme.textSecondary, align: .center)
     private let recordButton = NSButton()
     private let speakButton = NSButton()
+    private let voicePicker = NSPopUpButton()
+    private let voiceHint = LabelFactory.label("", font: .systemFont(ofSize: 11),
+                                                color: Theme.textTertiary, align: .center)
 
     // MARK: - 初始化
 
@@ -30,6 +33,7 @@ final class SpeakingPageView: NSView {
         super.init(frame: .zero)
         setupLayout()
         populateDecks()
+        populateVoices()
         loadSentences()
     }
 
@@ -58,6 +62,17 @@ final class SpeakingPageView: NSView {
 
         layoutResultArea()
         layoutControls()
+        layoutVoicePicker()
+    }
+
+    private func layoutVoicePicker() {
+        addSubview(voicePicker)
+        voicePicker.frame = CGRect(x: 218, y: 520, width: 260, height: 26)
+        voicePicker.target = self
+        voicePicker.action = #selector(voiceChanged)
+        addSubview(voiceHint)
+        voiceHint.frame = CGRect(x: 60, y: 552, width: 580, height: 18)
+        voiceHint.stringValue = "音质不佳？系统设置 → 辅助功能 → 朗读内容 → 系统声音 → 管理声音，安装 ★Premium 语音"
     }
 
     private func layoutResultArea() {
@@ -110,6 +125,22 @@ final class SpeakingPageView: NSView {
     }
 
     @objc private func deckChanged() { loadSentences() }
+
+    private func populateVoices() {
+        voicePicker.removeAllItems()
+        guard let state else { return }
+        for v in state.speech.availableVoices {
+            voicePicker.addItem(withTitle: v.label)
+            voicePicker.lastItem?.representedObject = v.identifier
+        }
+        // availableVoices 已按质量降序，默认选第一个（当前最优）
+        voicePicker.selectItem(at: 0)
+    }
+
+    @objc private func voiceChanged() {
+        guard let identifier = voicePicker.selectedItem?.representedObject as? String else { return }
+        state?.speech.setVoice(identifier: identifier)
+    }
 
     private func loadSentences() {
         guard let deckId = deckPicker.selectedItem?.representedObject as? String else { return }

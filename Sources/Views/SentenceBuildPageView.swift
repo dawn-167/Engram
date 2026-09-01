@@ -58,24 +58,24 @@ final class SentenceBuildPageView: NSView {
 
         let pickedCard = CardView()
         addSubview(pickedCard)
-        pickedCard.frame = CGRect(x: 40, y: 160, width: 620, height: 130)
+        pickedCard.frame = CGRect(x: 40, y: 150, width: 620, height: 110)
         pickedCard.autoresizingMask = [.width]
         pickedCard.addSubview(pickedFlow)
-        pickedFlow.frame = CGRect(x: 0, y: 0, width: 620, height: 130)
+        pickedFlow.frame = CGRect(x: 0, y: 0, width: 620, height: 110)
         pickedFlow.autoresizingMask = [.width]
 
-        answerLabel.frame = CGRect(x: 40, y: 300, width: 620, height: 30)
+        answerLabel.frame = CGRect(x: 40, y: 272, width: 620, height: 28)
         addSubview(answerLabel)
 
-        feedbackLabel.frame = CGRect(x: 40, y: 336, width: 620, height: 20)
+        feedbackLabel.frame = CGRect(x: 40, y: 306, width: 620, height: 20)
         addSubview(feedbackLabel)
 
         let optionsCard = CardView()
         addSubview(optionsCard)
-        optionsCard.frame = CGRect(x: 40, y: 372, width: 620, height: 150)
+        optionsCard.frame = CGRect(x: 40, y: 336, width: 620, height: 130)
         optionsCard.autoresizingMask = [.width]
         optionsCard.addSubview(optionsFlow)
-        optionsFlow.frame = CGRect(x: 0, y: 0, width: 620, height: 150)
+        optionsFlow.frame = CGRect(x: 0, y: 0, width: 620, height: 130)
         optionsFlow.autoresizingMask = [.width]
 
         nextButton.title = "下一句 →"
@@ -89,7 +89,7 @@ final class SentenceBuildPageView: NSView {
         nextButton.target = self
         nextButton.action = #selector(nextTapped)
         addSubview(nextButton)
-        nextButton.frame = CGRect(x: 290, y: 540, width: 120, height: 38)
+        nextButton.frame = CGRect(x: 290, y: 500, width: 120, height: 38)
         nextButton.isHidden = true
     }
 

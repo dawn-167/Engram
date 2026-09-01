@@ -63,16 +63,16 @@ final class TypingPageView: NSView {
         progressLabel.frame = CGRect(x: 0, y: 64, width: 700, height: 18)
         progressLabel.alignment = .center
 
-        translationLabel.frame = CGRect(x: 60, y: 120, width: 580, height: 40)
-        phoneticLabel.frame = CGRect(x: 60, y: 166, width: 580, height: 22)
+        translationLabel.frame = CGRect(x: 60, y: 170, width: 580, height: 40)
+        phoneticLabel.frame = CGRect(x: 60, y: 216, width: 580, height: 22)
         addSubview(translationLabel); addSubview(phoneticLabel)
 
         wordLabel.alignment = .center
-        wordLabel.font = Theme.mono(40)
-        wordLabel.frame = CGRect(x: 40, y: 224, width: 620, height: 60)
+        wordLabel.font = Theme.mono(44)
+        wordLabel.frame = CGRect(x: 40, y: 270, width: 620, height: 64)
         addSubview(wordLabel)
 
-        hintLabel.frame = CGRect(x: 60, y: 300, width: 580, height: 20)
+        hintLabel.frame = CGRect(x: 60, y: 350, width: 580, height: 20)
         addSubview(hintLabel)
 
         addSubview(keyboardCatcher)
@@ -91,7 +91,7 @@ final class TypingPageView: NSView {
             let caption = LabelFactory.label(pair.0, font: .systemFont(ofSize: 12),
                                               color: Theme.textSecondary, align: .center)
             addSubview(card)
-            card.frame = CGRect(x: 200 + CGFloat(index) * 160, y: 360, width: 140, height: 72)
+            card.frame = CGRect(x: 200 + CGFloat(index) * 160, y: 430, width: 140, height: 72)
             card.addSubview(pair.1); card.addSubview(caption)
             pair.1.frame = CGRect(x: 0, y: 14, width: 140, height: 26)
             caption.frame = CGRect(x: 0, y: 46, width: 140, height: 16)
@@ -100,7 +100,7 @@ final class TypingPageView: NSView {
 
     private func layoutSummary() {
         addSubview(summaryCard)
-        summaryCard.frame = CGRect(x: 120, y: 120, width: 460, height: 300)
+        summaryCard.frame = CGRect(x: 120, y: 150, width: 460, height: 360)
         summaryCard.isHidden = true
     }
 
@@ -108,8 +108,8 @@ final class TypingPageView: NSView {
         let speak = ButtonFactory.ghost("朗读单词", target: self, action: #selector(speakCurrent))
         let skip = ButtonFactory.ghost("跳过 (Tab)", target: self, action: #selector(skipTapped))
         addSubview(speak); addSubview(skip)
-        speak.frame = CGRect(x: 230, y: 470, width: 110, height: 34)
-        skip.frame = CGRect(x: 360, y: 470, width: 110, height: 34)
+        speak.frame = CGRect(x: 230, y: 540, width: 110, height: 34)
+        skip.frame = CGRect(x: 360, y: 540, width: 110, height: 34)
     }
 
     // MARK: - 会话控制
@@ -237,9 +237,9 @@ final class TypingPageView: NSView {
         let accLabel = LabelFactory.label("正确率 \(acc)%", font: Theme.heading(16), align: .center)
         let again = ButtonFactory.primary("再来一组", target: self, action: #selector(restartTapped))
         for v in [title, wpmLabel, accLabel, again] { summaryCard.addSubview(v) }
-        title.frame = CGRect(x: 0, y: 48, width: 460, height: 32)
-        wpmLabel.frame = CGRect(x: 0, y: 110, width: 460, height: 24)
-        accLabel.frame = CGRect(x: 0, y: 146, width: 460, height: 24)
-        again.frame = CGRect(x: 160, y: 210, width: 140, height: 40)
+        title.frame = CGRect(x: 0, y: 70, width: 460, height: 32)
+        wpmLabel.frame = CGRect(x: 0, y: 140, width: 460, height: 24)
+        accLabel.frame = CGRect(x: 0, y: 180, width: 460, height: 24)
+        again.frame = CGRect(x: 160, y: 270, width: 140, height: 40)
     }
 }

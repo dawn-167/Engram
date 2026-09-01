@@ -25,7 +25,7 @@ final class RootViewController: NSViewController {
     // MARK: - 生命周期
 
     override func loadView() {
-        view = NSView(frame: CGRect(x: 0, y: 0, width: 940, height: 640))
+        view = NSView(frame: CGRect(x: 0, y: 0, width: 940, height: 720))
     }
 
     override func viewDidLoad() {
