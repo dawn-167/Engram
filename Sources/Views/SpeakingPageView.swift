@@ -20,8 +20,8 @@ final class SpeakingPageView: NSView {
     private let scoreLabel = LabelFactory.label("", font: .systemFont(ofSize: 40, weight: .heavy), align: .center)
     private let levelLabel = LabelFactory.label("", font: Theme.heading(16), align: .center)
     private let detailLabel = LabelFactory.label("", font: Theme.body(12), color: Theme.textSecondary, align: .center)
-    private let recordButton = NSButton()
-    private let speakButton = NSButton()
+    private let recordButton = HandCursorButton()
+    private let speakButton = HandCursorButton()
     private let voicePicker = NSPopUpButton()
     private let voiceHint = LabelFactory.label("", font: .systemFont(ofSize: 11),
                                                 color: Theme.textTertiary, align: .center)

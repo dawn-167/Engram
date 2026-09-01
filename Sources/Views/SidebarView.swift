@@ -75,7 +75,7 @@ final class SidebarView: NSView {
         ])
 
         for page in AppPage.allCases {
-            let button = NSButton()
+            let button = HandCursorButton()
             button.isBordered = false
             button.focusRingType = .none
             button.title = page.title

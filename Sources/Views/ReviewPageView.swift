@@ -75,7 +75,7 @@ final class ReviewPageView: NSView {
         let width: CGFloat = 120
         let startX: CGFloat = 90
         grades.enumerated().forEach { index, grade in
-            let button = NSButton()
+            let button = HandCursorButton()
             button.title = grade.displayName
             button.isBordered = false
             button.font = .systemFont(ofSize: 13, weight: .semibold)

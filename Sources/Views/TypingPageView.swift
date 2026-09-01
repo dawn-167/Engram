@@ -238,7 +238,7 @@ final class TypingPageView: NSView {
     // 顶部栏
     private let deckText = TextMenuButton(title: "")
     private let chapterText = TextMenuButton(title: "")
-    private let pronunciationButton: NSButton
+    private let pronunciationButton: HandCursorButton
     private let toolbarCard = CardView()
     private var iconButtons: [ToolbarIconButton] = []
     private let startButton: NSButton
@@ -293,7 +293,7 @@ final class TypingPageView: NSView {
     init(state: AppState) {
         self.state = state
         startButton = ButtonFactory.primary("Start", target: nil, action: #selector(TypingPageView.startTapped))
-        pronunciationButton = NSButton(title: "美音", target: nil, action: #selector(TypingPageView.showPronunciationPanel(_:)))
+        pronunciationButton = HandCursorButton(title: "美音", target: nil, action: #selector(TypingPageView.showPronunciationPanel(_:)))
         pronunciationButton.isBordered = false
         pronunciationButton.focusRingType = .none
         pronunciationButton.font = .systemFont(ofSize: 15, weight: .medium)
@@ -686,6 +686,22 @@ final class TypingPageView: NSView {
                                       width: bounds.width - 36, height: 18)
             chevron.frame = CGRect(x: bounds.width - 22, y: (bounds.height - 10) / 2,
                                    width: 12, height: 10)
+        }
+
+        override func updateTrackingAreas() {
+            super.updateTrackingAreas()
+            trackingAreas.forEach { removeTrackingArea($0) }
+            addTrackingArea(NSTrackingArea(rect: bounds,
+                                           options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                           owner: self))
+        }
+
+        override func mouseEntered(with event: NSEvent) {
+            NSCursor.pointingHand.push()
+        }
+
+        override func mouseExited(with event: NSEvent) {
+            NSCursor.pop()
         }
 
         override func mouseDown(with event: NSEvent) {

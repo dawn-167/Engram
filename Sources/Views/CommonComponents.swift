@@ -90,11 +90,34 @@ class HoverView: NSView {
     }
 }
 
+/// 悬停时显示小手光标的按钮（所有可点击按钮的基类）
+class HandCursorButton: NSButton {
+    private var ta: NSTrackingArea?
+
+    override func layout() {
+        super.layout()
+        if let ta { removeTrackingArea(ta) }
+        let new = NSTrackingArea(rect: bounds,
+                                 options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                 owner: self)
+        addTrackingArea(new)
+        ta = new
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        if isEnabled { NSCursor.pointingHand.push() }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        NSCursor.pop()
+    }
+}
+
 /// 主按钮样式工厂
 enum ButtonFactory {
     /// 实心强调按钮
-    static func primary(_ title: String, target: AnyObject?, action: Selector) -> NSButton {
-        let button = NSButton(title: title, target: target, action: action)
+    static func primary(_ title: String, target: AnyObject?, action: Selector) -> HandCursorButton {
+        let button = HandCursorButton(title: title, target: target, action: action)
         button.bezelStyle = .inline
         button.font = .systemFont(ofSize: 13, weight: .semibold)
         button.contentTintColor = .white
@@ -107,8 +130,8 @@ enum ButtonFactory {
     }
 
     /// 描边次按钮
-    static func ghost(_ title: String, target: AnyObject?, action: Selector) -> NSButton {
-        let button = NSButton(title: title, target: target, action: action)
+    static func ghost(_ title: String, target: AnyObject?, action: Selector) -> HandCursorButton {
+        let button = HandCursorButton(title: title, target: target, action: action)
         button.bezelStyle = .inline
         button.font = .systemFont(ofSize: 13, weight: .medium)
         button.contentTintColor = Theme.textPrimary

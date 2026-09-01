@@ -22,7 +22,7 @@ final class SentenceBuildPageView: NSView {
     private let pickedFlow = FlowLayoutView()
     private let optionsFlow = FlowLayoutView()
     private let feedbackLabel = LabelFactory.label("", font: .systemFont(ofSize: 13), align: .center)
-    private let nextButton = NSButton()
+    private let nextButton = HandCursorButton()
 
     // MARK: - 初始化
 
@@ -138,8 +138,8 @@ final class SentenceBuildPageView: NSView {
 
     private enum TokenStyle { case option, picked }
 
-    private func makeTokenButton(title: String, tag: Int, style: TokenStyle) -> NSButton {
-        let button = NSButton()
+    private func makeTokenButton(title: String, tag: Int, style: TokenStyle) -> HandCursorButton {
+        let button = HandCursorButton()
         button.title = title
         button.tag = tag
         button.isBordered = false
