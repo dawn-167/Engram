@@ -149,19 +149,20 @@ private final class ToolbarIconButton: NSButton {
     }
 }
 
-/// 轻量音效管理器（qwerty 按键音/正确音/错误音，用 macOS 系统音，零资源）
+/// 轻量音效管理器（qwerty 按键音/效果音，用 macOS 系统音，零资源）
 private final class SoundManager {
     static let shared = SoundManager()
-    var enabled = true
+    var keySoundEnabled = true
+    var hintSoundEnabled = true
     private let keySound = NSSound(named: .init("Tink"))
     private let correctSound = NSSound(named: .init("Glass"))
     private let wrongSound = NSSound(named: .init("Basso"))
     private let completeSound = NSSound(named: .init("Hero"))
 
-    func playKey() { if enabled { keySound?.play() } }
-    func playCorrect() { if enabled { correctSound?.play() } }
-    func playWrong() { if enabled { wrongSound?.play() } }
-    func playComplete() { if enabled { completeSound?.play() } }
+    func playKey() { if keySoundEnabled { keySound?.play() } }
+    func playCorrect() { if hintSoundEnabled { correctSound?.play() } }
+    func playWrong() { if hintSoundEnabled { wrongSound?.play() } }
+    func playComplete() { if hintSoundEnabled { completeSound?.play() } }
 }
 
 /// 默写模式（qwerty eye 图标）：隐藏单词的全部/元音/辅音/随机，边听边默写
@@ -217,8 +218,12 @@ final class TypingPageView: NSView {
     private var translationVisible = true
     /// 默写模式（qwerty eye 图标）
     private var dictationMode: DictationMode = .off
-    /// 音效开关（qwerty speaker 图标）
-    private var soundEnabled = true
+    /// 音标显示开关（qwerty 发音面板）
+    private var phoneticVisible = true
+    /// 释义发音开关（qwerty 发音面板）
+    private var transPronunciationEnabled = false
+    /// 循环发音开关（qwerty 发音面板）
+    private var loopPronunciationEnabled = false
     /// 暂停状态（qwerty Pause）
     private var isPaused = false
     /// 暂停前累计已用时间（暂停/恢复计时用）
@@ -227,7 +232,7 @@ final class TypingPageView: NSView {
     // 顶部栏
     private let deckText = TextMenuButton(title: "")
     private let chapterText = TextMenuButton(title: "")
-    private let accentText = TextMenuButton(title: "美音")
+    private let pronunciationButton: NSButton
     private let toolbarCard = CardView()
     private var iconButtons: [ToolbarIconButton] = []
     private let startButton: NSButton
@@ -280,8 +285,16 @@ final class TypingPageView: NSView {
     init(state: AppState) {
         self.state = state
         startButton = ButtonFactory.primary("Start", target: nil, action: #selector(TypingPageView.startTapped))
+        pronunciationButton = NSButton(title: "美音", target: nil, action: #selector(TypingPageView.showPronunciationPanel(_:)))
+        pronunciationButton.isBordered = false
+        pronunciationButton.focusRingType = .none
+        pronunciationButton.font = .systemFont(ofSize: 15, weight: .medium)
+        pronunciationButton.contentTintColor = .labelColor
+        pronunciationButton.wantsLayer = true
+        pronunciationButton.layer?.cornerRadius = 4
         super.init(frame: .zero)
         startButton.target = self
+        pronunciationButton.target = self
         keyboardCatcher.onKey = { [weak self] char in self?.handleKey(char) }
         setupLayout()
         populateDecks()
@@ -312,18 +325,14 @@ final class TypingPageView: NSView {
             self?.layoutToolbar()
             self?.startSession()
         }
-        accentText.onPick = { [weak self] index in
-            guard let self = self else { return }
-            self.accentLocale = [0: "en-US", 1: "en-GB", 2: ""][index] ?? "en-US"
-            self.layoutToolbar()
-        }
-        accentText.items = ["美音", "英音", "关闭发音"]
+        // 发音按钮：点击弹出面板（音标/发音/口音设置）
+        pronunciationButton.toolTip = "发音及音标设置"
 
         addSubview(toolbarCard)
         toolbarCard.autoresizingMask = [.maxYMargin]
         toolbarCard.addSubview(deckText)
         toolbarCard.addSubview(chapterText)
-        toolbarCard.addSubview(accentText)
+        toolbarCard.addSubview(pronunciationButton)
 
         let icons: [(String, String, String, Bool)] = [
             ("heroicons_speaker-wave-solid", "speaker.wave.2.fill", "音效设置", true),
@@ -457,7 +466,7 @@ final class TypingPageView: NSView {
     private func layoutToolbar() {
         let deckW = Self.textWidth(Self.deckFixedTitle) + 4
         let chapterW = Self.textWidth(Self.chapterFixedTitle) + 4
-        let accentW = Self.textWidth(accentText.title) + 4
+        let accentW = Self.textWidth(pronunciationButton.title) + 4
         let iconsW = CGFloat(iconButtons.count) * Self.iconSize
             + CGFloat(max(iconButtons.count - 1, 0)) * Self.iconGap
 
@@ -473,7 +482,7 @@ final class TypingPageView: NSView {
         x += deckW + Self.textGap
         chapterText.frame = CGRect(x: x, y: 8, width: chapterW, height: 28)
         x += chapterW + Self.textGap
-        accentText.frame = CGRect(x: x, y: 8, width: accentW, height: 28)
+        pronunciationButton.frame = CGRect(x: x, y: 8, width: accentW, height: 28)
         x += accentW + Self.textToIconsGap
         for (index, button) in iconButtons.enumerated() {
             button.frame = CGRect(x: x, y: 11, width: Self.iconSize, height: Self.iconSize)
@@ -595,68 +604,122 @@ final class TypingPageView: NSView {
     @objc private func iconTapped(_ sender: NSButton) {
         guard let index = iconButtons.firstIndex(where: { $0 === sender }) else { return }
         switch index {
-        case 0: toggleSound()             // 音效
-        case 1: cycleLoopTimes()          // 循环
-        case 2: showDictationPanel(sender) // 默写（下拉面板）
-        case 3: toggleTranslation()       // 释义显示
-        case 4: showErrorBook(sender)     // 错题本
-        case 5: onNavigate?(.stats)       // 数据统计
-        case 6: toggleDarkMode()          // 深色模式
-        case 7: showKeyboardGuide(sender) // 指法图示
-        case 8: showSettings(sender)      // 设置
+        case 0: showSoundPanel(sender)         // 音效（面板：按键音+效果音）
+        case 1: showLoopPanel(sender)          // 循环（面板：1/3/5/8/∞ 单选）
+        case 2: showDictationPanel(sender)     // 默写（面板：开关+模式）
+        case 3: toggleTranslation()            // 释义显示（toggle）
+        case 4: showErrorBook(sender)          // 错题本
+        case 5: onNavigate?(.stats)            // 数据统计
+        case 6: toggleDarkMode()               // 深色模式
+        case 7: showKeyboardGuide(sender)      // 指法图示
+        case 8: showSettings(sender)           // 设置
         default: break
         }
     }
 
-    // MARK: - 音效开关
+    // MARK: - 音效面板（qwerty SoundSwitcher：按键音 + 效果音）
 
-    private func toggleSound() {
-        soundEnabled.toggle()
-        SoundManager.shared.enabled = soundEnabled
-        iconButtons[0].setActive(soundEnabled)
-        iconButtons[0].toolTip = soundEnabled ? "音效：开" : "音效：关"
-    }
-
-    // MARK: - 默写模式下拉面板（qwerty WordDictationSwitcher）
-
-    private func showDictationPanel(_ sender: NSButton) {
+    private func showSoundPanel(_ sender: NSButton) {
         let popover = NSPopover()
         popover.behavior = .transient
         let content = NSViewController()
         let view = NSView(frame: CGRect(x: 0, y: 0, width: 240, height: 130))
         content.view = view
 
+        // 按键音
+        let keyLabel = LabelFactory.label("开关按键音", font: .systemFont(ofSize: 13, weight: .medium))
+        keyLabel.frame = CGRect(x: 16, y: 96, width: 100, height: 18)
+        view.addSubview(keyLabel)
+        let keySwitch = NSSwitch()
+        keySwitch.state = SoundManager.shared.keySoundEnabled ? .on : .off
+        keySwitch.frame = CGRect(x: 16, y: 70, width: 40, height: 22)
+        keySwitch.target = self
+        keySwitch.action = #selector(soundKeyToggle(_:))
+        view.addSubview(keySwitch)
+        let keyStatus = LabelFactory.label(SoundManager.shared.keySoundEnabled ? "发音已开启" : "发音已关闭",
+                                           font: .systemFont(ofSize: 11), color: Theme.textSecondary, align: .right)
+        keyStatus.frame = CGRect(x: 150, y: 72, width: 74, height: 18)
+        keyStatus.tag = 101
+        view.addSubview(keyStatus)
+
+        // 效果音
+        let hintLabel = LabelFactory.label("开关效果音", font: .systemFont(ofSize: 13, weight: .medium))
+        hintLabel.frame = CGRect(x: 16, y: 44, width: 100, height: 18)
+        view.addSubview(hintLabel)
+        let hintSwitch = NSSwitch()
+        hintSwitch.state = SoundManager.shared.hintSoundEnabled ? .on : .off
+        hintSwitch.frame = CGRect(x: 16, y: 18, width: 40, height: 22)
+        hintSwitch.target = self
+        hintSwitch.action = #selector(soundHintToggle(_:))
+        view.addSubview(hintSwitch)
+        let hintStatus = LabelFactory.label(SoundManager.shared.hintSoundEnabled ? "发音已开启" : "发音已关闭",
+                                            font: .systemFont(ofSize: 11), color: Theme.textSecondary, align: .right)
+        hintStatus.frame = CGRect(x: 150, y: 20, width: 74, height: 18)
+        hintStatus.tag = 102
+        view.addSubview(hintStatus)
+
+        popover.contentViewController = content
+        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+    }
+
+    @objc private func soundKeyToggle(_ sender: NSSwitch) {
+        SoundManager.shared.keySoundEnabled = sender.state == .on
+        iconButtons[0].setActive(SoundManager.shared.keySoundEnabled || SoundManager.shared.hintSoundEnabled)
+        if let status = sender.superview?.viewWithTag(101) as? NSTextField {
+            status.stringValue = sender.state == .on ? "发音已开启" : "发音已关闭"
+        }
+    }
+
+    @objc private func soundHintToggle(_ sender: NSSwitch) {
+        SoundManager.shared.hintSoundEnabled = sender.state == .on
+        iconButtons[0].setActive(SoundManager.shared.keySoundEnabled || SoundManager.shared.hintSoundEnabled)
+        if let status = sender.superview?.viewWithTag(102) as? NSTextField {
+            status.stringValue = sender.state == .on ? "发音已开启" : "发音已关闭"
+        }
+    }
+
+    // MARK: - 默写模式下拉面板（qwerty WordDictationSwitcher）
+
+    private func showDictationPanel(_ sender: NSButton) {
+        let isOn = dictationMode != .off
+        let viewH: CGFloat = isOn ? 130 : 70
+        let popover = NSPopover()
+        popover.behavior = .transient
+        let content = NSViewController()
+        let view = NSView(frame: CGRect(x: 0, y: 0, width: 240, height: viewH))
+        content.view = view
+
         // 开关
         let toggle = NSSwitch()
-        toggle.state = dictationMode != .off ? .on : .off
-        toggle.frame = CGRect(x: 16, y: 96, width: 40, height: 22)
+        toggle.state = isOn ? .on : .off
+        toggle.frame = CGRect(x: 16, y: viewH - 52, width: 40, height: 22)
         toggle.target = self
         toggle.action = #selector(dictationToggleChanged(_:))
         view.addSubview(toggle)
 
         let toggleLabel = LabelFactory.label("开关默写模式", font: .systemFont(ofSize: 13, weight: .medium))
-        toggleLabel.frame = CGRect(x: 64, y: 98, width: 120, height: 18)
+        toggleLabel.frame = CGRect(x: 64, y: viewH - 50, width: 100, height: 18)
         view.addSubview(toggleLabel)
 
-        let statusLabel = LabelFactory.label(dictationMode != .off ? "默写已开启" : "默写已关闭",
-                                             font: .systemFont(ofSize: 11), color: Theme.textSecondary)
-        statusLabel.frame = CGRect(x: 160, y: 98, width: 70, height: 18)
-        statusLabel.tag = 99
+        let statusLabel = LabelFactory.label(isOn ? "默写已开启" : "默写已关闭",
+                                             font: .systemFont(ofSize: 11), color: Theme.textSecondary, align: .right)
+        statusLabel.frame = CGRect(x: 160, y: viewH - 50, width: 64, height: 18)
         view.addSubview(statusLabel)
 
-        // 模式下拉
-        let modeLabel = LabelFactory.label("默写模式", font: .systemFont(ofSize: 12), color: Theme.textSecondary)
-        modeLabel.frame = CGRect(x: 16, y: 64, width: 80, height: 18)
-        view.addSubview(modeLabel)
+        // 模式选择（仅开启时显示）
+        if isOn {
+            let modeLabel = LabelFactory.label("默写模式", font: .systemFont(ofSize: 12), color: Theme.textSecondary)
+            modeLabel.frame = CGRect(x: 16, y: 58, width: 80, height: 18)
+            view.addSubview(modeLabel)
 
-        let popup = NSPopUpButton(frame: CGRect(x: 16, y: 32, width: 208, height: 26))
-        popup.addItems(withTitles: ["全部隐藏", "隐藏元音", "隐藏辅音", "随机隐藏"])
-        let modeMap: [DictationMode] = [.hideAll, .hideVowels, .hideConsonants, .randomHide]
-        if let idx = modeMap.firstIndex(of: dictationMode) { popup.selectItem(at: idx) }
-        popup.target = self
-        popup.action = #selector(dictationModeChanged(_:))
-        popup.isEnabled = dictationMode != .off
-        view.addSubview(popup)
+            let popup = NSPopUpButton(frame: CGRect(x: 16, y: 24, width: 208, height: 26))
+            popup.addItems(withTitles: ["全部隐藏", "隐藏元音", "隐藏辅音", "随机隐藏"])
+            let modeMap: [DictationMode] = [.hideAll, .hideVowels, .hideConsonants, .randomHide]
+            if let idx = modeMap.firstIndex(of: dictationMode) { popup.selectItem(at: idx) }
+            popup.target = self
+            popup.action = #selector(dictationModeChanged(_:))
+            view.addSubview(popup)
+        }
 
         popover.contentViewController = content
         popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
@@ -669,17 +732,15 @@ final class TypingPageView: NSView {
             dictationMode = .off
         }
         updateDictationIcon()
-        // 更新状态文字
-        if let popover = sender.window?.contentViewController as? NSViewController,
-           let status = popover.view.viewWithTag(99) as? NSTextField {
-            status.stringValue = dictationMode != .off ? "默写已开启" : "默写已关闭"
-        }
-        // 更新下拉可用性
-        if let popover = sender.window?.contentViewController as? NSViewController,
-           let popup = popover.view.subviews.first(where: { $0 is NSPopUpButton }) as? NSPopUpButton {
-            popup.isEnabled = dictationMode != .off
-        }
         render()
+        // 切换开关时重建面板（显示/隐藏模式选择）
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            sender.window?.close()
+            if self.iconButtons.count > 2 {
+                self.showDictationPanel(self.iconButtons[2])
+            }
+        }
     }
 
     @objc private func dictationModeChanged(_ sender: NSPopUpButton) {
@@ -700,15 +761,50 @@ final class TypingPageView: NSView {
         iconButtons[2].toolTip = isOff ? "默写：关闭" : "默写模式"
     }
 
-    /// 单词循环：1 → 3 → 5 → 8 → ∞ → 1
-    private func cycleLoopTimes() {
-        let options = [1, 3, 5, 8, Int.max]
-        let next = options.first { $0 > service.loopTimes } ?? options[0]
-        service.loopTimes = next
-        let infinite = next == Int.max
-        iconButtons[1].setIcon(infinite || next > 1 ? "tabler_repeat" : "tabler_repeat-off",
-                               fallbackSymbol: "repeat", active: next > 1)
-        iconButtons[1].toolTip = infinite ? "单词循环：无限次" : "单词循环 ×\(next)"
+    // MARK: - 循环面板（qwerty LoopWordSwitcher：1/3/5/8/∞ 单选）
+
+    private func showLoopPanel(_ sender: NSButton) {
+        let popover = NSPopover()
+        popover.behavior = .transient
+        let content = NSViewController()
+        let options: [Int] = [1, 3, 5, 8, Int.max]
+        let labels = ["1", "3", "5", "8", "无限"]
+        let view = NSView(frame: CGRect(x: 0, y: 0, width: 240, height: CGFloat(30 + options.count * 32)))
+        content.view = view
+
+        let title = LabelFactory.label("选择单词的循环次数", font: .systemFont(ofSize: 13, weight: .medium))
+        title.frame = CGRect(x: 16, y: view.frame.height - 28, width: 200, height: 18)
+        view.addSubview(title)
+
+        for (i, opt) in options.enumerated() {
+            let y = view.frame.height - 60 - CGFloat(i) * 32
+            let radio = NSButton(radioButtonWithTitle: labels[i], target: self, action: #selector(loopOptionSelected(_:)))
+            radio.tag = opt
+            radio.state = service.loopTimes == opt ? .on : .off
+            radio.frame = CGRect(x: 16, y: y, width: 200, height: 22)
+            radio.font = .systemFont(ofSize: 14)
+            view.addSubview(radio)
+        }
+
+        popover.contentViewController = content
+        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+    }
+
+    @objc private func loopOptionSelected(_ sender: NSButton) {
+        let times = sender.tag
+        service.loopTimes = times
+        updateLoopIcon()
+        // 关闭 popover
+        sender.window?.close()
+    }
+
+    /// 更新循环图标：1=repeat-off(灰)，其他=repeat+数字角标(紫)
+    private func updateLoopIcon() {
+        let times = service.loopTimes
+        let isOff = times == 1
+        iconButtons[1].setIcon(isOff ? "tabler_repeat-off" : "tabler_repeat",
+                               fallbackSymbol: "repeat", active: !isOff)
+        iconButtons[1].toolTip = isOff ? "单词循环：关闭" : (times == Int.max ? "单词循环：无限" : "单词循环 ×\(times)")
     }
 
     /// 释义显示开关（qwerty language 图标）
@@ -813,9 +909,9 @@ final class TypingPageView: NSView {
         title.frame = CGRect(x: 16, y: 168, width: 200, height: 22)
         view.addSubview(title)
 
-        // 音效开关
+        // 按键音开关
         let soundBtn = NSButton(checkboxWithTitle: "按键音效", target: self, action: #selector(settingsSoundToggle(_:)))
-        soundBtn.state = soundEnabled ? .on : .off
+        soundBtn.state = SoundManager.shared.keySoundEnabled ? .on : .off
         soundBtn.frame = CGRect(x: 16, y: 136, width: 200, height: 22)
         view.addSubview(soundBtn)
 
@@ -842,15 +938,163 @@ final class TypingPageView: NSView {
     }
 
     @objc private func settingsSoundToggle(_ sender: NSButton) {
-        soundEnabled = sender.state == .on
-        SoundManager.shared.enabled = soundEnabled
-        iconButtons[0].setActive(soundEnabled)
+        let on = sender.state == .on
+        SoundManager.shared.keySoundEnabled = on
+        SoundManager.shared.hintSoundEnabled = on
+        iconButtons[0].setActive(on)
     }
 
     @objc private func settingsTransToggle(_ sender: NSButton) {
         translationVisible = sender.state == .on
         translationLabel.isHidden = !translationVisible
         iconButtons[3].setActive(translationVisible)
+    }
+
+    // MARK: - 发音面板（qwerty PronunciationSwitcher：音标+单词发音+释义发音+循环发音+口音）
+
+    @objc private func showPronunciationPanel(_ sender: NSButton) {
+        let pronOn = !accentLocale.isEmpty
+        let viewH: CGFloat = pronOn ? 230 : 150
+        let popover = NSPopover()
+        popover.behavior = .transient
+        let content = NSViewController()
+        let view = NSView(frame: CGRect(x: 0, y: 0, width: 240, height: viewH))
+        content.view = view
+
+        var y = viewH - 30
+
+        // 音标显示
+        let phoneticLabel = LabelFactory.label("开关音标显示", font: .systemFont(ofSize: 13, weight: .medium))
+        phoneticLabel.frame = CGRect(x: 16, y: y, width: 120, height: 18)
+        view.addSubview(phoneticLabel)
+        y -= 28
+        let phoneticSwitch = NSSwitch()
+        phoneticSwitch.state = phoneticVisible ? .on : .off
+        phoneticSwitch.frame = CGRect(x: 16, y: y, width: 40, height: 22)
+        phoneticSwitch.target = self
+        phoneticSwitch.action = #selector(pronPhoneticToggle(_:))
+        view.addSubview(phoneticSwitch)
+        let phoneticStatus = LabelFactory.label(phoneticVisible ? "音标已开启" : "音标已关闭",
+                                                font: .systemFont(ofSize: 11), color: Theme.textSecondary, align: .right)
+        phoneticStatus.frame = CGRect(x: 150, y: y + 2, width: 74, height: 18)
+        phoneticStatus.tag = 201
+        view.addSubview(phoneticStatus)
+        y -= 34
+
+        // 单词发音
+        let wordPronLabel = LabelFactory.label("开关单词发音", font: .systemFont(ofSize: 13, weight: .medium))
+        wordPronLabel.frame = CGRect(x: 16, y: y, width: 120, height: 18)
+        view.addSubview(wordPronLabel)
+        y -= 28
+        let wordPronSwitch = NSSwitch()
+        wordPronSwitch.state = pronOn ? .on : .off
+        wordPronSwitch.frame = CGRect(x: 16, y: y, width: 40, height: 22)
+        wordPronSwitch.target = self
+        wordPronSwitch.action = #selector(pronWordToggle(_:))
+        view.addSubview(wordPronSwitch)
+        let wordPronStatus = LabelFactory.label(pronOn ? "发音已开启" : "发音已关闭",
+                                                font: .systemFont(ofSize: 11), color: Theme.textSecondary, align: .right)
+        wordPronStatus.frame = CGRect(x: 150, y: y + 2, width: 74, height: 18)
+        wordPronStatus.tag = 202
+        view.addSubview(wordPronStatus)
+
+        if pronOn {
+            y -= 34
+            // 释义发音
+            let transPronLabel = LabelFactory.label("开关释义发音", font: .systemFont(ofSize: 13, weight: .medium))
+            transPronLabel.frame = CGRect(x: 16, y: y, width: 120, height: 18)
+            view.addSubview(transPronLabel)
+            y -= 28
+            let transPronSwitch = NSSwitch()
+            transPronSwitch.state = transPronunciationEnabled ? .on : .off
+            transPronSwitch.frame = CGRect(x: 16, y: y, width: 40, height: 22)
+            transPronSwitch.target = self
+            transPronSwitch.action = #selector(pronTransToggle(_:))
+            view.addSubview(transPronSwitch)
+            let transPronStatus = LabelFactory.label(transPronunciationEnabled ? "发音已开启" : "发音已关闭",
+                                                    font: .systemFont(ofSize: 11), color: Theme.textSecondary, align: .right)
+            transPronStatus.frame = CGRect(x: 150, y: y + 2, width: 74, height: 18)
+            transPronStatus.tag = 203
+            view.addSubview(transPronStatus)
+
+            y -= 34
+            // 循环发音
+            let loopPronLabel = LabelFactory.label("开关循环发音", font: .systemFont(ofSize: 13, weight: .medium))
+            loopPronLabel.frame = CGRect(x: 16, y: y, width: 120, height: 18)
+            view.addSubview(loopPronLabel)
+            y -= 28
+            let loopPronSwitch = NSSwitch()
+            loopPronSwitch.state = loopPronunciationEnabled ? .on : .off
+            loopPronSwitch.frame = CGRect(x: 16, y: y, width: 40, height: 22)
+            loopPronSwitch.target = self
+            loopPronSwitch.action = #selector(pronLoopToggle(_:))
+            view.addSubview(loopPronSwitch)
+            let loopPronStatus = LabelFactory.label(loopPronunciationEnabled ? "循环已开启" : "循环已关闭",
+                                                    font: .systemFont(ofSize: 11), color: Theme.textSecondary, align: .right)
+            loopPronStatus.frame = CGRect(x: 150, y: y + 2, width: 74, height: 18)
+            loopPronStatus.tag = 204
+            view.addSubview(loopPronStatus)
+
+            y -= 34
+            // 口音选择
+            let accentLabel = LabelFactory.label("单词发音口音", font: .systemFont(ofSize: 13, weight: .medium))
+            accentLabel.frame = CGRect(x: 16, y: y, width: 120, height: 18)
+            view.addSubview(accentLabel)
+            y -= 30
+            let accentPopup = NSPopUpButton(frame: CGRect(x: 16, y: y, width: 208, height: 26))
+            accentPopup.addItems(withTitles: ["美音", "英音"])
+            accentPopup.selectItem(at: accentLocale == "en-GB" ? 1 : 0)
+            accentPopup.target = self
+            accentPopup.action = #selector(pronAccentChanged(_:))
+            view.addSubview(accentPopup)
+        }
+
+        popover.contentViewController = content
+        popover.show(relativeTo: sender.bounds, of: sender, preferredEdge: .maxY)
+    }
+
+    @objc private func pronPhoneticToggle(_ sender: NSSwitch) {
+        phoneticVisible = sender.state == .on
+        phoneticLabel.isHidden = !phoneticVisible
+        if let status = sender.superview?.viewWithTag(201) as? NSTextField {
+            status.stringValue = phoneticVisible ? "音标已开启" : "音标已关闭"
+        }
+    }
+
+    @objc private func pronWordToggle(_ sender: NSSwitch) {
+        let isOn = sender.state == .on
+        accentLocale = isOn ? "en-US" : ""
+        pronunciationButton.title = isOn ? (accentLocale == "en-GB" ? "英音" : "美音") : "关闭"
+        layoutToolbar()
+        if let status = sender.superview?.viewWithTag(202) as? NSTextField {
+            status.stringValue = isOn ? "发音已开启" : "发音已关闭"
+        }
+        // 切换单词发音开关时重建面板（显示/隐藏下方选项）
+        DispatchQueue.main.async { [weak self] in
+            guard let self = self else { return }
+            sender.window?.close()
+            self.showPronunciationPanel(self.pronunciationButton)
+        }
+    }
+
+    @objc private func pronTransToggle(_ sender: NSSwitch) {
+        transPronunciationEnabled = sender.state == .on
+        if let status = sender.superview?.viewWithTag(203) as? NSTextField {
+            status.stringValue = transPronunciationEnabled ? "发音已开启" : "发音已关闭"
+        }
+    }
+
+    @objc private func pronLoopToggle(_ sender: NSSwitch) {
+        loopPronunciationEnabled = sender.state == .on
+        if let status = sender.superview?.viewWithTag(204) as? NSTextField {
+            status.stringValue = loopPronunciationEnabled ? "循环已开启" : "循环已关闭"
+        }
+    }
+
+    @objc private func pronAccentChanged(_ sender: NSPopUpButton) {
+        accentLocale = sender.indexOfSelectedItem == 1 ? "en-GB" : "en-US"
+        pronunciationButton.title = sender.indexOfSelectedItem == 1 ? "英音" : "美音"
+        layoutToolbar()
     }
 
     /// 深色模式开关（qwerty sun/moon 图标）
@@ -984,7 +1228,16 @@ final class TypingPageView: NSView {
         let target = sessionWords[max(0, done - 1)]
         state?.recordPractice(id: target.id, kind: .word, grade: .good)
         state?.store.recordToday(action: { $0.wordsTyped += 1 }, now: Date())
-        state?.speech.speak(target.text, rate: 0.5, locale: accentLocale)
+        if !accentLocale.isEmpty {
+            state?.speech.speak(target.text, rate: 0.5, locale: accentLocale)
+            // 释义发音：单词朗读后读中文释义
+            if transPronunciationEnabled {
+                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
+                    guard let self = self, self.transPronunciationEnabled else { return }
+                    self.state?.speech.speak(target.translation, rate: 0.5, locale: "zh-CN")
+                }
+            }
+        }
         render()
     }
 
@@ -1022,6 +1275,7 @@ final class TypingPageView: NSView {
         let wpm = minutes > 0 ? Int((Double(s.correctKeyPresses) / 5.0 / minutes).rounded()) : 0
         translationLabel.stringValue = word.translation
         phoneticLabel.stringValue = word.phonetic
+        phoneticLabel.isHidden = !phoneticVisible
         statTime.stringValue = Self.timeString(elapsed)
         statInput.stringValue = "\(s.totalKeyPresses)"
         statWPM.stringValue = "\(wpm)"
