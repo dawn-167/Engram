@@ -6,6 +6,9 @@ import Cocoa
 
 public enum NXWindowStyle {
 
+    private static var vibrancyView: NSVisualEffectView?
+    private static var tintLayer: CAGradientLayer?
+
     /// 创建 Nexus 标准毛玻璃浮动窗口
     /// - Parameters:
     ///   - size: 窗口内容尺寸
@@ -29,7 +32,6 @@ public enum NXWindowStyle {
         win.isOpaque = false
         win.backgroundColor = .clear
         win.hasShadow = true
-        win.level = .floating
         win.isReleasedWhenClosed = false
         win.acceptsMouseMovedEvents = true
         win.minSize = NSSize(width: size.width, height: 400)
@@ -37,9 +39,9 @@ public enum NXWindowStyle {
             win.maxSize = NSSize(width: size.width, height: 3000)
         }
 
-        // 毛玻璃背景
+        // 毛玻璃背景（underWindowBackground 在深色模式下更深邃）
         let vibrancy = NSVisualEffectView(frame: win.contentLayoutRect)
-        vibrancy.material = .popover
+        vibrancy.material = .underWindowBackground
         vibrancy.blendingMode = .behindWindow
         vibrancy.state = .active
         vibrancy.wantsLayer = true
@@ -49,15 +51,47 @@ public enum NXWindowStyle {
         vibrancy.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.35).cgColor
         vibrancy.autoresizingMask = [.width, .height]
         win.contentView = vibrancy
+        vibrancyView = vibrancy
 
-        // 主题色叠加层
+        // 主题色渐变叠加层（上浅下深，明暗自适应）
         let tint = NSView(frame: vibrancy.bounds)
         tint.wantsLayer = true
-        tint.layer?.backgroundColor = tintColor.cgColor
+        let gradient = CAGradientLayer()
+        gradient.frame = vibrancy.bounds
+        gradient.autoresizingMask = [.layerWidthSizable, .layerHeightSizable]
+        updateTintGradient(gradient)
+        tint.layer?.addSublayer(gradient)
         tint.autoresizingMask = [.width, .height]
         vibrancy.addSubview(tint)
+        tintLayer = gradient
 
         return win
+    }
+
+    /// 更新渐变叠加层颜色（明暗模式切换时调用）
+    public static func updateAppearance() {
+        guard let gradient = tintLayer else { return }
+        updateTintGradient(gradient)
+        vibrancyView?.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.35).cgColor
+    }
+
+    private static func updateTintGradient(_ gradient: CAGradientLayer) {
+        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        if isDark {
+            // 深色模式：深紫蓝渐变，顶部微亮底部深邃
+            gradient.colors = [
+                NSColor(red: 0.16, green: 0.14, blue: 0.26, alpha: 0.85).cgColor,
+                NSColor(red: 0.08, green: 0.07, blue: 0.14, alpha: 0.92).cgColor
+            ]
+        } else {
+            // 浅色模式：淡紫白渐变
+            gradient.colors = [
+                NSColor(red: 0.96, green: 0.95, blue: 0.99, alpha: 0.7).cgColor,
+                NSColor(red: 0.92, green: 0.91, blue: 0.97, alpha: 0.8).cgColor
+            ]
+        }
+        gradient.startPoint = CGPoint(x: 0.5, y: 0)
+        gradient.endPoint = CGPoint(x: 0.5, y: 1)
     }
 
     /// 在毛玻璃窗口上添加内容容器视图

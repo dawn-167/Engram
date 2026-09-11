@@ -6,13 +6,17 @@ import Cocoa
 /// 圆角卡片容器
 final class CardView: NSView {
     private let bgLayer = CALayer()
+    private let fill: NSColor
 
     init(fill: NSColor = Theme.cardBackground) {
+        self.fill = fill
         super.init(frame: .zero)
         wantsLayer = true
         layer = CALayer()
         bgLayer.cornerRadius = Theme.cornerRadius
         bgLayer.backgroundColor = fill.cgColor
+        bgLayer.borderWidth = 1
+        bgLayer.borderColor = Theme.cardBorder.cgColor
         bgLayer.shadowColor = NSColor.black.cgColor
         bgLayer.shadowOpacity = 0.07
         bgLayer.shadowRadius = 7
@@ -25,6 +29,9 @@ final class CardView: NSView {
     override func layout() {
         super.layout()
         bgLayer.frame = bounds
+        // 动态颜色（明暗模式）需要在布局时重新解析 cgColor
+        bgLayer.backgroundColor = fill.cgColor
+        bgLayer.borderColor = Theme.cardBorder.cgColor
     }
 }
 
@@ -62,6 +69,9 @@ class HoverView: NSView {
         super.layout()
         cardLayer.frame = bounds
         hoverLayer.frame = bounds
+        if cardStyle {
+            cardLayer.backgroundColor = Theme.cardBackground.cgColor
+        }
     }
 
     override func updateTrackingAreas() {

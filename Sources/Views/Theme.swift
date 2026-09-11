@@ -23,8 +23,27 @@ enum Theme {
     /// 卡片背景（不透明，规避半透明在非 Retina 屏的字体模糊问题）
     static let cardBackground = NSColor(name: nil) { appearance in
         appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-            ? NSColor(white: 0.16, alpha: 0.92)
+            ? NSColor(red: 0.14, green: 0.14, blue: 0.20, alpha: 0.96)
             : NSColor(white: 1, alpha: 0.92)
+    }
+
+    /// 卡片边框（深色模式下更明显）
+    static let cardBorder = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(white: 1, alpha: 0.08)
+            : NSColor(white: 0, alpha: 0.06)
+    }
+
+    /// 页面背景渐变（深色模式用深紫蓝渐变，更酷炫）
+    static let pageGradientTop = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(red: 0.10, green: 0.09, blue: 0.16, alpha: 1.0)
+            : NSColor(white: 0.97, alpha: 1.0)
+    }
+    static let pageGradientBottom = NSColor(name: nil) { appearance in
+        appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+            ? NSColor(red: 0.06, green: 0.06, blue: 0.12, alpha: 1.0)
+            : NSColor(white: 0.94, alpha: 1.0)
     }
 
     /// 侧边栏选中态背景

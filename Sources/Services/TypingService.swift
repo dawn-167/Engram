@@ -70,6 +70,8 @@ final class TypingService: TypingServiceProtocol {
     private(set) var stats = TypingSessionStats()
     /// 每个单词循环输入次数（qwerty 单词循环：1=不循环；Int.max=无限）
     var loopTimes = 1
+    /// 是否忽略大小写（qwerty 高级设置）
+    var ignoreCase = true
     private var loopRemaining = 0
     private var advancedWords = 0
 
@@ -81,6 +83,18 @@ final class TypingService: TypingServiceProtocol {
 
     var currentWord: WordEntry? {
         guard index < queue.count else { return nil }
+        return queue[index]
+    }
+
+    /// 当前单词在队列中的索引（用于前后单词导航）
+    var currentIndex: Int { index }
+
+    /// 队列总单词数
+    var totalWords: Int { queue.count }
+
+    /// 获取指定索引的单词（用于前后单词预览）
+    func word(at index: Int) -> WordEntry? {
+        guard index >= 0, index < queue.count else { return nil }
         return queue[index]
     }
 
@@ -112,7 +126,12 @@ final class TypingService: TypingServiceProtocol {
 
         // 忽略大小写差异，降低挫败感，但仍要求逐字母正确
         guard typedLength < target.count else { return .accepted }
-        let isCorrect = String(character).lowercased() == String(target[typedLength]).lowercased()
+        let isCorrect: Bool
+        if ignoreCase {
+            isCorrect = String(character).lowercased() == String(target[typedLength]).lowercased()
+        } else {
+            isCorrect = String(character) == String(target[typedLength])
+        }
 
         guard isCorrect else {
             // Qwerty 核心机制：错误即整词重来，锁定正确肌肉记忆
@@ -131,6 +150,17 @@ final class TypingService: TypingServiceProtocol {
         guard currentWord != nil else { return .sessionFinished }
         stats.errorWords += 1
         return advance()
+    }
+
+    /// 跳转到指定索引的单词（qwerty 前后单词导航：SKIP_2_WORD_INDEX）
+    func skipToWord(_ newIndex: Int) -> TypingFeedback {
+        guard newIndex >= 0, newIndex < queue.count else { return .sessionFinished }
+        index = newIndex
+        typedLength = 0
+        hadWrongThisWord = false
+        loopRemaining = max(1, loopTimes)
+        advancedWords = max(advancedWords, newIndex)
+        return .wordCompleted
     }
 
     // MARK: - 私有方法

@@ -20,6 +20,14 @@ protocol ProgressStoreProtocol {
     func recordToday(action: @escaping (inout DailyStat) -> Void, now: Date)
     /// 获取今日统计
     func todayStat(now: Date) -> DailyStat
+    /// 记录错词（单词完成时调用）
+    func recordWrongWord(word: String, translation: String, dictName: String, wrongCount: Int, letterMistakes: [Int: [String]]?)
+    /// 获取全部错词（按错误次数降序）
+    func allWrongWords() -> [WrongWordRecord]
+    /// 删除错词
+    func deleteWrongWord(id: String)
+    /// 清空错词本
+    func clearWrongWords()
 }
 
 final class ProgressStore: ProgressStoreProtocol {
@@ -100,6 +108,48 @@ final class ProgressStore: ProgressStoreProtocol {
 
     func todayStat(now: Date) -> DailyStat {
         data.daily[Self.dayKey(now)] ?? DailyStat(dateKey: Self.dayKey(now))
+    }
+
+    // MARK: - 错词本
+
+    /// 记录一个错词（单词完成时调用，含错误次数）
+    func recordWrongWord(word: String, translation: String, dictName: String, wrongCount: Int, letterMistakes: [Int: [String]]? = nil) {
+        guard wrongCount > 0 else { return }
+        let id = "\(dictName)::\(word)"
+        mutate { data in
+            if var existing = data.wrongWords[id] {
+                existing.wrongCount += wrongCount
+                existing.lastWrongAt = Date()
+                if let mistakes = letterMistakes {
+                    var merged = existing.letterMistakes ?? [:]
+                    for (pos, chars) in mistakes {
+                        merged[pos] = (merged[pos] ?? []) + chars
+                    }
+                    existing.letterMistakes = merged
+                }
+                data.wrongWords[id] = existing
+            } else {
+                data.wrongWords[id] = WrongWordRecord(
+                    word: word, translation: translation, dictName: dictName,
+                    wrongCount: wrongCount, lastWrongAt: Date(), letterMistakes: letterMistakes
+                )
+            }
+        }
+    }
+
+    /// 获取全部错词（按错误次数降序）
+    func allWrongWords() -> [WrongWordRecord] {
+        Array(data.wrongWords.values).sorted { $0.wrongCount > $1.wrongCount }
+    }
+
+    /// 删除错词
+    func deleteWrongWord(id: String) {
+        mutate { $0.wrongWords.removeValue(forKey: id) }
+    }
+
+    /// 清空错词本
+    func clearWrongWords() {
+        mutate { $0.wrongWords.removeAll() }
     }
 
     // MARK: - 私有方法

@@ -12,6 +12,7 @@ final class RootViewController: NSViewController {
     private let contentContainer = NSView()
     private var pageViews: [AppPage: NSView] = [:]
     private var currentPage: AppPage?
+    private var lastAppearance: NSAppearance?
 
     // MARK: - 初始化
 
@@ -36,6 +37,17 @@ final class RootViewController: NSViewController {
         appState.onPageChange = { [weak self] page in self?.showPage(page) }
         showPage(.home)
         refreshSidebar()
+    }
+
+    /// 明暗模式切换时更新窗口渐变和所有卡片颜色
+    override func viewDidLayout() {
+        super.viewDidLayout()
+        let current = view.effectiveAppearance
+        if lastAppearance != current {
+            lastAppearance = current
+            NXWindowStyle.updateAppearance()
+            view.subviews.forEach { $0.needsLayout = true }
+        }
     }
 
     // MARK: - 布局

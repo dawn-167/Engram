@@ -43,6 +43,24 @@ struct UserSettings: Codable, Equatable {
     var dailyReviewLimit: Int = 100
 }
 
+/// 错词记录（qwerty wordRecords：单词完成时保存，含错误次数）
+struct WrongWordRecord: Codable, Equatable, Identifiable {
+    /// 唯一 id = word + dictName
+    var id: String { "\(dictName)::\(word)" }
+    /// 单词
+    let word: String
+    /// 释义
+    let translation: String
+    /// 所属词库
+    let dictName: String
+    /// 累计错误次数
+    var wrongCount: Int
+    /// 最近一次错误时间
+    var lastWrongAt: Date
+    /// 错误字母详情（字母位置 -> 输错的字符列表）
+    var letterMistakes: [Int: [String]]?
+}
+
 /// 持久化到磁盘的根数据对象
 struct ProgressData: Codable {
     /// 记忆条目表，key 为条目 id
@@ -55,4 +73,6 @@ struct ProgressData: Codable {
     var lastActiveDay: String?
     /// 用户设置
     var settings = UserSettings()
+    /// 错词本（key = record.id）
+    var wrongWords: [String: WrongWordRecord] = [:]
 }

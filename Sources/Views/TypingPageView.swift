@@ -1,19 +1,127 @@
 import Cocoa
+import AVFoundation
 
 // MARK: - 单词打字页（复刻 qwerty 打字功能）
 // 顶部栏：白卡（词库/章节/发音 + qwerty SVG 图标 + Start）
 // 中间：单词大字逐字母着色 + 音标 + 释义 +「按任意键开始」遮罩
 // 底部：进度条 + 五项实时统计；整章完成出结果面板（时间/WPM/正确率 + 错词 + 再来一组）
 
-/// 文字菜单按钮（无边框无背景，点击弹出 NSMenu，对齐 qwerty 文字导航项）
+/// Qwerty 风格 tooltip：白底圆角阴影、文字垂直居中
+private final class TooltipView: NSView {
+    init(text: String) {
+        super.init(frame: .zero)
+        wantsLayer = true
+        layer?.backgroundColor = NSColor.white.cgColor
+        layer?.cornerRadius = 8
+        layer?.borderWidth = 1
+        layer?.borderColor = Theme.divider.cgColor
+        layer?.shadowColor = NSColor.black.cgColor
+        layer?.shadowOpacity = 0.12
+        layer?.shadowRadius = 6
+        layer?.shadowOffset = CGSize(width: 0, height: 2)
+
+        let label = NSTextField(labelWithString: text)
+        label.font = .systemFont(ofSize: 12, weight: .regular)
+        label.textColor = .black.withAlphaComponent(0.85)
+        label.alignment = .center
+        label.drawsBackground = false
+        label.isBezeled = false
+        label.sizeToFit()
+        let padX: CGFloat = 14
+        let h: CGFloat = 26
+        let w = label.bounds.width + padX
+        setFrameSize(NSSize(width: w, height: h))
+        label.frame = CGRect(x: padX / 2, y: (h - label.bounds.height) / 2,
+                             width: w - padX, height: label.bounds.height)
+        addSubview(label)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+}
+
+/// 自定义白色下拉菜单窗口（替代 NSMenu，纯白背景+圆角+悬停高亮）
+private final class DropdownMenuWindow: NSWindow {
+    private let onPick: (Int) -> Void
+    private var hoveredRow: Int = -1
+
+    init(items: [String], selectedIndex: Int, at point: NSPoint, minWidth: CGFloat, onPick: @escaping (Int) -> Void) {
+        self.onPick = onPick
+        let rowH: CGFloat = 32
+        // 根据最长文字计算宽度
+        let font = NSFont.systemFont(ofSize: 14)
+        let textWidth = items.map { ($0 as NSString).size(withAttributes: [.font: font]).width }.max() ?? 100
+        let w = max(minWidth, textWidth + 60)
+        let h = CGFloat(items.count) * rowH + 8
+        super.init(contentRect: NSRect(x: point.x, y: point.y - h, width: w, height: h),
+                   styleMask: [.borderless], backing: .buffered, defer: false)
+        isOpaque = false
+        backgroundColor = .clear
+        hasShadow = true
+        isReleasedWhenClosed = false
+        level = .popUpMenu
+
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: frame.width, height: h))
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor.white.cgColor
+        container.layer?.cornerRadius = 8
+        container.layer?.masksToBounds = true
+        container.layer?.borderColor = NSColor.black.withAlphaComponent(0.08).cgColor
+        container.layer?.borderWidth = 1
+        contentView = container
+
+        for (i, title) in items.enumerated() {
+            let row = NSButton(frame: NSRect(x: 4, y: h - 4 - CGFloat(i + 1) * rowH, width: frame.width - 8, height: rowH))
+            row.title = ""
+            row.isBordered = false
+            row.tag = i
+            row.target = self
+            row.action = #selector(rowClicked(_:))
+            row.wantsLayer = true
+            row.layer?.cornerRadius = 5
+            row.layer?.backgroundColor = (i == selectedIndex) ? NSColor.systemBlue.withAlphaComponent(0.1).cgColor : .clear
+
+            let check = NSTextField(labelWithString: i == selectedIndex ? "✓" : "")
+            check.frame = CGRect(x: 10, y: 6, width: 20, height: 20)
+            check.font = .systemFont(ofSize: 14, weight: .bold)
+            check.textColor = .systemBlue
+            check.alignment = .center
+            row.addSubview(check)
+
+            let label = NSTextField(labelWithString: title)
+            label.frame = CGRect(x: 34, y: 6, width: row.bounds.width - 44, height: 20)
+            label.font = .systemFont(ofSize: 14)
+            label.textColor = .labelColor
+            row.addSubview(label)
+
+            container.addSubview(row)
+        }
+    }
+
+    @objc private func rowClicked(_ sender: NSButton) {
+        onPick(sender.tag)
+        close()
+    }
+
+    override func close() {
+        super.close()
+    }
+}
+
+/// 文字菜单按钮（无边框无背景，点击弹出自定义白色下拉，对齐 qwerty 文字导航项）
 private final class TextMenuButton: NSButton {
     var items: [String] = []
     var values: [Any?] = []
     var onPick: ((Int) -> Void)?
     private var isHovered = false
     var selectedIndex: Int = 0
+    private var hoverTA: NSTrackingArea?
+    private var tooltipTag: NSView?
+    private let tipText: String
+    private var dropdownWindow: DropdownMenuWindow?
+    private var dropdownMonitor: Any?
+    private static var currentDropdown: TextMenuButton?
 
     init(title: String, tooltip: String = "") {
+        self.tipText = tooltip
         super.init(frame: .zero)
         self.title = title
         isBordered = false
@@ -23,7 +131,6 @@ private final class TextMenuButton: NSButton {
         contentTintColor = .labelColor
         wantsLayer = true
         layer?.cornerRadius = 6
-        self.toolTip = tooltip
         target = self
         action = #selector(showMenu)
         updateAppearance()
@@ -33,23 +140,48 @@ private final class TextMenuButton: NSButton {
 
     @objc private func showMenu() {
         guard !items.isEmpty else { return }
-        let menu = NSMenu()
-        for (index, title) in items.enumerated() {
-            let item = NSMenuItem(title: title, action: #selector(picked(_:)), keyEquivalent: "")
-            item.target = self
-            item.tag = index
-            item.state = (index == selectedIndex) ? .on : .off
-            menu.addItem(item)
+        if dropdownWindow != nil {
+            closeDropdown()
+            return
         }
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: bounds.height + 6), in: self)
+        // 关闭其他已打开的下拉
+        Self.currentDropdown?.closeDropdown()
+        Self.currentDropdown = self
+
+        let windowPt = convert(NSPoint(x: -4, y: bounds.height + 6), to: nil)
+        let screenPt = window?.convertPoint(toScreen: windowPt) ?? windowPt
+        let w = DropdownMenuWindow(items: items, selectedIndex: selectedIndex, at: screenPt, minWidth: bounds.width + 40) { [weak self] idx in
+            guard let self else { return }
+            self.selectedIndex = idx
+            self.title = self.items[idx]
+            self.onPick?(idx)
+            self.closeDropdown()
+        }
+        dropdownWindow = w
+        w.makeKeyAndOrderFront(nil)
+        // 应用内+应用外点击都关闭
+        let handler: (NSEvent) -> NSEvent? = { [weak self] event in
+            if let win = self?.dropdownWindow, event.window != win {
+                self?.closeDropdown()
+            }
+            return event
+        }
+        dropdownMonitor = NSEvent.addLocalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown], handler: handler)
+        NSEvent.addGlobalMonitorForEvents(matching: [.leftMouseDown, .rightMouseDown]) { [weak self] _ in
+            self?.closeDropdown()
+        }
     }
 
-    @objc private func picked(_ sender: NSMenuItem) {
-        let index = sender.tag
-        guard items.indices.contains(index) else { return }
-        selectedIndex = index
-        title = items[index]
-        onPick?(index)
+    private func closeDropdown() {
+        dropdownWindow?.close()
+        dropdownWindow = nil
+        if let monitor = dropdownMonitor {
+            NSEvent.removeMonitor(monitor)
+            dropdownMonitor = nil
+        }
+        if Self.currentDropdown === self {
+            Self.currentDropdown = nil
+        }
     }
 
     private func updateAppearance() {
@@ -60,24 +192,44 @@ private final class TextMenuButton: NSButton {
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        trackingAreas.forEach { removeTrackingArea($0) }
-        addTrackingArea(NSTrackingArea(rect: bounds,
-                                       options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-                                       owner: self))
+        if let hoverTA { removeTrackingArea(hoverTA) }
+        hoverTA = NSTrackingArea(rect: bounds,
+                                  options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                  owner: self)
+        addTrackingArea(hoverTA!)
     }
 
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
         updateAppearance()
+        showCustomTooltip()
     }
 
     override func mouseExited(with event: NSEvent) {
         isHovered = false
         updateAppearance()
+        hideCustomTooltip()
     }
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .pointingHand)
+    }
+
+    // MARK: - 自定义 tooltip
+
+    private func showCustomTooltip() {
+        guard !tipText.isEmpty, let container = superview else { return }
+        hideCustomTooltip()
+        let tip = TooltipView(text: tipText)
+        let bf = convert(bounds, to: container)
+        tip.frame.origin = NSPoint(x: bf.midX - tip.bounds.width / 2, y: bf.maxY + 8)
+        container.addSubview(tip, positioned: .above, relativeTo: nil)
+        tooltipTag = tip
+    }
+
+    private func hideCustomTooltip() {
+        tooltipTag?.removeFromSuperview()
+        tooltipTag = nil
     }
 }
 
@@ -87,12 +239,17 @@ private final class ToolbarIconButton: NSButton {
     private let activeTint: NSColor
     private let inactiveTint: NSColor
     private var activeState: Bool
+    private var hoverTA: NSTrackingArea?
+    private var tooltipTag: NSView?
+    private var badgeLabel: NSTextField?
+    private let tipText: String
 
     init(iconName: String, fallbackSymbol: String, tooltip: String, active: Bool) {
         // qwerty 图标色调：indigo-500 (#6366f1)
         self.activeTint = NSColor(red: 0.388, green: 0.400, blue: 0.945, alpha: 1.0)
         self.inactiveTint = Theme.textSecondary
         self.activeState = active
+        self.tipText = tooltip
         super.init(frame: .zero)
         image = Self.loadToolbarIcon(iconName) ?? NSImage(systemSymbolName: fallbackSymbol, accessibilityDescription: tooltip)
         image?.isTemplate = true
@@ -101,7 +258,6 @@ private final class ToolbarIconButton: NSButton {
         focusRingType = .none
         wantsLayer = true
         layer?.cornerRadius = 5
-        self.toolTip = tooltip
         updateAppearance()
     }
 
@@ -120,7 +276,7 @@ private final class ToolbarIconButton: NSButton {
         if let iconName, let image = Self.loadToolbarIcon(iconName) {
             self.image = image
         } else {
-            self.image = NSImage(systemSymbolName: fallbackSymbol, accessibilityDescription: toolTip)
+            self.image = NSImage(systemSymbolName: fallbackSymbol, accessibilityDescription: tipText)
         }
         image?.isTemplate = true
         updateAppearance()
@@ -131,6 +287,25 @@ private final class ToolbarIconButton: NSButton {
         updateAppearance()
     }
 
+    /// 图标中央叠加数字角标（qwerty 循环次数显示）
+    func setBadge(_ text: String?) {
+        badgeLabel?.removeFromSuperview()
+        badgeLabel = nil
+        guard let text, !text.isEmpty else { return }
+        let badge = NSTextField(labelWithString: text)
+        badge.font = .monospacedSystemFont(ofSize: 9, weight: .bold)
+        badge.textColor = activeTint
+        badge.alignment = .center
+        badge.drawsBackground = false
+        badge.isBezeled = false
+        badge.sizeToFit()
+        badge.frame = CGRect(x: (bounds.width - badge.bounds.width) / 2,
+                             y: (bounds.height - badge.bounds.height) / 2 - 1,
+                             width: badge.bounds.width, height: badge.bounds.height)
+        addSubview(badge)
+        badgeLabel = badge
+    }
+
     private func updateAppearance() {
         layer?.backgroundColor = isHovered ? activeTint.withAlphaComponent(0.10).cgColor : .clear
         contentTintColor = isHovered ? activeTint : (activeState ? activeTint : inactiveTint)
@@ -138,24 +313,44 @@ private final class ToolbarIconButton: NSButton {
 
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
-        trackingAreas.forEach { removeTrackingArea($0) }
-        addTrackingArea(NSTrackingArea(rect: bounds,
-                                       options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
-                                       owner: self))
+        if let hoverTA { removeTrackingArea(hoverTA) }
+        hoverTA = NSTrackingArea(rect: bounds,
+                                  options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                  owner: self)
+        addTrackingArea(hoverTA!)
     }
 
     override func mouseEntered(with event: NSEvent) {
         isHovered = true
         updateAppearance()
+        showCustomTooltip()
     }
 
     override func mouseExited(with event: NSEvent) {
         isHovered = false
         updateAppearance()
+        hideCustomTooltip()
     }
 
     override func resetCursorRects() {
         addCursorRect(bounds, cursor: .pointingHand)
+    }
+
+    // MARK: - 自定义 tooltip
+
+    private func showCustomTooltip() {
+        guard !tipText.isEmpty, let container = superview else { return }
+        hideCustomTooltip()
+        let tip = TooltipView(text: tipText)
+        let bf = convert(bounds, to: container)
+        tip.frame.origin = NSPoint(x: bf.midX - tip.bounds.width / 2, y: bf.maxY + 8)
+        container.addSubview(tip, positioned: .above, relativeTo: nil)
+        tooltipTag = tip
+    }
+
+    private func hideCustomTooltip() {
+        tooltipTag?.removeFromSuperview()
+        tooltipTag = nil
     }
 }
 
@@ -173,6 +368,80 @@ private final class SoundManager {
     func playCorrect() { if hintSoundEnabled { correctSound?.play() } }
     func playWrong() { if hintSoundEnabled { wrongSound?.play() } }
     func playComplete() { if hintSoundEnabled { completeSound?.play() } }
+}
+
+/// 前后单词导航视图（qwerty PrevAndNextWord：半透明，悬停高亮，点击跳转）
+private final class PrevNextWordView: NSView {
+    enum NavType { case prev, next }
+    private let type: NavType
+    private let arrowLabel = NSTextField(labelWithString: "")
+    private let wordLabel = NSTextField(labelWithString: "")
+    private let transLabel = NSTextField(labelWithString: "")
+    var onClick: (() -> Void)?
+
+    init(type: NavType) {
+        self.type = type
+        super.init(frame: .zero)
+        wantsLayer = true
+        alphaValue = 0.55
+        // 箭头
+        arrowLabel.font = .systemFont(ofSize: 22, weight: .light)
+        arrowLabel.textColor = Theme.textSecondary
+        arrowLabel.stringValue = type == .prev ? "←" : "→"
+        // 单词
+        wordLabel.font = .monospacedSystemFont(ofSize: 22, weight: .regular)
+        wordLabel.textColor = Theme.textSecondary
+        wordLabel.lineBreakMode = .byTruncatingTail
+        wordLabel.maximumNumberOfLines = 1
+        // 释义
+        transLabel.font = .systemFont(ofSize: 13, weight: .regular)
+        transLabel.textColor = Theme.textTertiary
+        transLabel.lineBreakMode = .byTruncatingTail
+        transLabel.maximumNumberOfLines = 1
+        addSubview(arrowLabel)
+        addSubview(wordLabel)
+        addSubview(transLabel)
+        // 点击
+        let click = NSClickGestureRecognizer(target: self, action: #selector(handleClick))
+        addGestureRecognizer(click)
+        // 悬停高亮
+        let tracking = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
+        addTrackingArea(tracking)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    func configure(word: String, translation: String) {
+        wordLabel.stringValue = word
+        transLabel.stringValue = translation
+        needsLayout = true
+    }
+
+    override func layout() {
+        super.layout()
+        let arrowW: CGFloat = 28
+        let contentW = bounds.width - arrowW - 6
+        if type == .prev {
+            arrowLabel.frame = CGRect(x: 0, y: (bounds.height - 28) / 2, width: arrowW, height: 28)
+            wordLabel.frame = CGRect(x: arrowW + 6, y: bounds.height - 28, width: contentW, height: 26)
+            transLabel.frame = CGRect(x: arrowW + 6, y: 0, width: contentW, height: 18)
+        } else {
+            wordLabel.frame = CGRect(x: 0, y: bounds.height - 28, width: contentW, height: 26)
+            wordLabel.alignment = .right
+            transLabel.frame = CGRect(x: 0, y: 0, width: contentW, height: 18)
+            transLabel.alignment = .right
+            arrowLabel.frame = CGRect(x: bounds.width - arrowW, y: (bounds.height - 28) / 2, width: arrowW, height: 28)
+            arrowLabel.alignment = .right
+        }
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        animator().alphaValue = 1.0
+    }
+    override func mouseExited(with event: NSEvent) {
+        animator().alphaValue = 0.55
+    }
+
+    @objc private func handleClick() { onClick?() }
 }
 
 /// 默写模式（qwerty eye 图标）：隐藏单词的全部/元音/辅音/随机，边听边默写
@@ -209,14 +478,414 @@ private enum DictationMode: Int, CaseIterable {
     }
 }
 
+private final class FlippedView: NSView {
+    override var isFlipped: Bool { true }
+}
+
+/// 无边框可成为 key 的窗口（用于设置面板）
+private final class BorderlessKeyWindow: NSWindow {
+    override var canBecomeKey: Bool { true }
+    override var canBecomeMain: Bool { true }
+}
+
+// MARK: - 设置窗口视图（qwerty Setting：左侧边栏+右侧内容，独立窗口）
+
+private final class SettingsPanelView: NSView {
+    weak var typingPage: TypingPageView?
+    private var currentTab = 0
+    private let sidebar = NSView()
+    private let contentScroll = NSScrollView()
+    private let contentDoc = FlippedView()
+    private var navButtons: [NSButton] = []
+
+    private let tabs = [
+        (icon: "ear", title: "音效设置"),
+        (icon: "slider.horizontal.3", title: "高级设置"),
+        (icon: "eye", title: "显示设置"),
+        (icon: "externaldrive", title: "数据设置"),
+    ]
+
+    override init(frame frameRect: NSRect) {
+        super.init(frame: frameRect)
+        wantsLayer = true
+        layer?.cornerRadius = 12
+        layer?.masksToBounds = true
+        setupUI()
+    }
+
+    override func layout() {
+        super.layout()
+        layer?.backgroundColor = NSColor(name: nil) { appearance in
+            appearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                ? NSColor(calibratedWhite: 0.15, alpha: 1)
+                : .white
+        }.cgColor
+        if contentDoc.subviews.isEmpty {
+            buildTabContent(currentTab)
+        }
+    }
+
+    required init?(coder: NSCoder) { fatalError() }
+
+    private func setupUI() {
+        // 顶部标题栏
+        let titleBar = NSView(frame: NSRect(x: 0, y: bounds.height - 44, width: bounds.width, height: 44))
+        titleBar.autoresizingMask = [.width, .minYMargin]
+        let titleLabel = NSTextField(labelWithString: "设置")
+        titleLabel.font = .systemFont(ofSize: 20, weight: .bold)
+        titleLabel.textColor = .labelColor
+        titleLabel.frame = CGRect(x: 20, y: 10, width: 200, height: 26)
+        titleBar.addSubview(titleLabel)
+        let closeBtn = NSButton(title: "×", target: self, action: #selector(closeWindow))
+        closeBtn.isBordered = false
+        closeBtn.font = .systemFont(ofSize: 22, weight: .light)
+        closeBtn.contentTintColor = .secondaryLabelColor
+        closeBtn.frame = CGRect(x: bounds.width - 40, y: 8, width: 28, height: 28)
+        closeBtn.autoresizingMask = [.minXMargin]
+        titleBar.addSubview(closeBtn)
+        addSubview(titleBar)
+
+        // 左侧边栏
+        sidebar.frame = CGRect(x: 0, y: 0, width: 160, height: bounds.height - 44)
+        sidebar.autoresizingMask = [.height, .maxXMargin]
+        sidebar.wantsLayer = true
+        sidebar.layer?.backgroundColor = NSColor.controlBackgroundColor.withAlphaComponent(0.5).cgColor
+        addSubview(sidebar)
+
+        for (i, tab) in tabs.enumerated() {
+            let btn = NSButton(frame: CGRect(x: 12, y: sidebar.bounds.height - 48 - CGFloat(i) * 44, width: 136, height: 36))
+            btn.autoresizingMask = [.maxYMargin]
+            btn.title = "  \(tab.title)"
+            btn.image = NSImage(systemSymbolName: tab.icon, accessibilityDescription: tab.title)
+            btn.imagePosition = .imageLeft
+            btn.font = .systemFont(ofSize: 13, weight: .medium)
+            btn.isBordered = false
+            btn.contentTintColor = .secondaryLabelColor
+            btn.tag = i
+            btn.target = self
+            btn.action = #selector(tabClicked(_:))
+            btn.wantsLayer = true
+            btn.layer?.cornerRadius = 8
+            navButtons.append(btn)
+            sidebar.addSubview(btn)
+        }
+        updateNavSelection()
+
+        // 右侧内容区
+        contentScroll.frame = CGRect(x: 160, y: 0, width: bounds.width - 160, height: bounds.height - 44)
+        contentScroll.autoresizingMask = [.width, .height]
+        contentScroll.hasVerticalScroller = true
+        contentScroll.borderType = .noBorder
+        contentScroll.drawsBackground = false
+        contentScroll.documentView = contentDoc
+        addSubview(contentScroll)
+
+        buildTabContent(0)
+    }
+
+    @objc private func closeWindow() {
+        typingPage?.settingsWindowDidClose()
+        window?.close()
+    }
+
+    @objc private func tabClicked(_ sender: NSButton) {
+        currentTab = sender.tag
+        updateNavSelection()
+        buildTabContent(currentTab)
+    }
+
+    private func updateNavSelection() {
+        for (i, btn) in navButtons.enumerated() {
+            if i == currentTab {
+                btn.layer?.backgroundColor = NSColor.selectedControlColor.withAlphaComponent(0.15).cgColor
+                btn.contentTintColor = .labelColor
+            } else {
+                btn.layer?.backgroundColor = .clear
+                btn.contentTintColor = .secondaryLabelColor
+            }
+        }
+    }
+
+    private func buildTabContent(_ tab: Int) {
+        contentDoc.subviews.forEach { $0.removeFromSuperview() }
+        let w = contentScroll.bounds.width - 24
+        var y: CGFloat = 16
+
+        switch tab {
+        case 0: y = buildSoundTab(w, y)
+        case 1: y = buildAdvancedTab(w, y)
+        case 2: y = buildViewTab(w, y)
+        case 3: y = buildDataTab(w, y)
+        default: break
+        }
+        contentDoc.frame = CGRect(x: 0, y: 0, width: w, height: max(y + 20, contentScroll.bounds.height))
+    }
+
+    // MARK: - 音效设置 tab
+
+    private func buildSoundTab(_ w: CGFloat, _ startY: CGFloat) -> CGFloat {
+        var y = startY
+        guard let page = typingPage else { return y }
+
+        // 单词发音
+        y = addSectionTitle(contentDoc, y: y, title: "单词发音", width: w)
+        y = addToggleRow(contentDoc, y: y, width: w,
+                         on: !page.accentLocale.isEmpty,
+                         status: page.accentLocale.isEmpty ? "发音已关闭" : "发音已开启") { [weak self] on in
+            self?.typingPage?.accentLocale = on ? "en-US" : ""
+            self?.typingPage?.speakerButton.isHidden = !on
+            self?.rebuildCurrentTab()
+        }
+        y = addSliderRow(contentDoc, y: y, width: w, label: "音量", value: 100, min: 0, max: 100, suffix: "%") { _ in }
+        y = addSliderRow(contentDoc, y: y, width: w, label: "倍速", value: 1.0, min: 0.5, max: 4.0, suffix: "") { _ in }
+        y += 12
+
+        // 释义发音
+        y = addSectionTitle(contentDoc, y: y, title: "释义发音", width: w)
+        y = addToggleRow(contentDoc, y: y, width: w,
+                         on: page.transPronunciationEnabled,
+                         status: page.transPronunciationEnabled ? "发音已开启" : "发音已关闭") { [weak self] on in
+            self?.typingPage?.transPronunciationEnabled = on
+            self?.rebuildCurrentTab()
+        }
+        y = addSliderRow(contentDoc, y: y, width: w, label: "音量", value: 100, min: 0, max: 100, suffix: "%") { _ in }
+        y += 12
+
+        // 按键音
+        y = addSectionTitle(contentDoc, y: y, title: "按键音", width: w)
+        y = addToggleRow(contentDoc, y: y, width: w,
+                         on: SoundManager.shared.keySoundEnabled,
+                         status: SoundManager.shared.keySoundEnabled ? "发音已开启" : "发音已关闭") { [weak self] on in
+            SoundManager.shared.keySoundEnabled = on
+            self?.typingPage?.iconButtons[0].setActive(on)
+            self?.rebuildCurrentTab()
+        }
+        y = addSliderRow(contentDoc, y: y, width: w, label: "音量", value: 50, min: 1, max: 100, suffix: "%") { _ in }
+        y += 12
+
+        // 效果音
+        y = addSectionTitle(contentDoc, y: y, title: "效果音", width: w)
+        y = addToggleRow(contentDoc, y: y, width: w,
+                         on: SoundManager.shared.hintSoundEnabled,
+                         status: SoundManager.shared.hintSoundEnabled ? "发音已开启" : "发音已关闭") { [weak self] on in
+            SoundManager.shared.hintSoundEnabled = on
+            self?.rebuildCurrentTab()
+        }
+        y = addSliderRow(contentDoc, y: y, width: w, label: "音量", value: 50, min: 1, max: 100, suffix: "%") { _ in }
+        return y
+    }
+
+    // MARK: - 高级设置 tab
+
+    private func buildAdvancedTab(_ w: CGFloat, _ startY: CGFloat) -> CGFloat {
+        var y = startY
+        guard let page = typingPage else { return y }
+
+        y = addSectionTitle(contentDoc, y: y, title: "章节乱序", desc: "开启后，每次练习章节中单词会随机排序。下一章节生效", width: w)
+        y = addToggleRow(contentDoc, y: y, width: w, on: false, status: "随机已关闭") { _ in }
+        y += 12
+
+        y = addSectionTitle(contentDoc, y: y, title: "练习时展示上一个/下一个单词", desc: "开启后，练习中会在上方展示上一个/下一个单词", width: w)
+        y = addToggleRow(contentDoc, y: y, width: w,
+                         on: page.showPrevNextWord,
+                         status: page.showPrevNextWord ? "展示单词已开启" : "展示单词已关闭") { [weak self] on in
+            self?.typingPage?.showPrevNextWord = on
+            self?.typingPage?.needsLayout = true
+            self?.rebuildCurrentTab()
+        }
+        y += 12
+
+        y = addSectionTitle(contentDoc, y: y, title: "是否忽略大小写", desc: "开启后，输入时不区分大小写", width: w)
+        y = addToggleRow(contentDoc, y: y, width: w,
+                         on: page.ignoreCase,
+                         status: page.ignoreCase ? "忽略大小写已开启" : "忽略大小写已关闭") { [weak self] on in
+            self?.typingPage?.ignoreCase = on
+            self?.typingPage?.service.ignoreCase = on
+            self?.rebuildCurrentTab()
+        }
+        y += 12
+
+        y = addSectionTitle(contentDoc, y: y, title: "是否允许选择文本", desc: "开启后，可以通过鼠标选择文本", width: w)
+        y = addToggleRow(contentDoc, y: y, width: w, on: false, status: "选择文本已关闭") { _ in }
+        return y
+    }
+
+    // MARK: - 显示设置 tab
+
+    private func buildViewTab(_ w: CGFloat, _ startY: CGFloat) -> CGFloat {
+        var y = startY
+        guard let page = typingPage else { return y }
+
+        y = addSectionTitle(contentDoc, y: y, title: "字体设置", width: w)
+        y = addSliderRow(contentDoc, y: y, width: w, label: "外语字体",
+                         value: Double(page.wordFontSize), min: 20, max: 96, suffix: "px") { [weak self] val in
+            self?.typingPage?.wordFontSize = CGFloat(val)
+            self?.typingPage?.wordLabel.font = .monospacedSystemFont(ofSize: CGFloat(val), weight: .regular)
+            self?.typingPage?.needsLayout = true
+        }
+        y = addSliderRow(contentDoc, y: y, width: w, label: "中文字体",
+                         value: Double(page.transFontSize), min: 14, max: 60, suffix: "px") { [weak self] val in
+            self?.typingPage?.transFontSize = CGFloat(val)
+            self?.typingPage?.translationLabel.font = .systemFont(ofSize: CGFloat(val), weight: .regular)
+        }
+        y += 12
+
+        // 重置按钮
+        let resetBtn = ButtonFactory.primary("重置字体设置", target: self, action: #selector(resetFont))
+        resetBtn.frame = CGRect(x: 0, y: y, width: 120, height: 26)
+        contentDoc.addSubview(resetBtn)
+        y += 36
+        return y
+    }
+
+    @objc private func resetFont() {
+        typingPage?.wordFontSize = 48
+        typingPage?.transFontSize = 18
+        typingPage?.wordLabel.font = .monospacedSystemFont(ofSize: 48, weight: .regular)
+        typingPage?.translationLabel.font = .systemFont(ofSize: 18, weight: .regular)
+        typingPage?.needsLayout = true
+        rebuildCurrentTab()
+    }
+
+    // MARK: - 数据设置 tab
+
+    private func buildDataTab(_ w: CGFloat, _ startY: CGFloat) -> CGFloat {
+        var y = startY
+
+        y = addSectionTitle(contentDoc, y: y, title: "数据导出",
+                            desc: "目前，用户的练习数据仅保存在本地。建议及时备份。", width: w)
+        let exportBtn = ButtonFactory.primary("导出数据", target: self, action: #selector(exportData))
+        exportBtn.frame = CGRect(x: 0, y: y, width: 88, height: 26)
+        contentDoc.addSubview(exportBtn)
+        y += 40
+        y += 12
+
+        y = addSectionTitle(contentDoc, y: y, title: "清空错词本", desc: "删除所有错词记录，不可恢复", width: w)
+        let clearBtn = ButtonFactory.ghost("清空错词本", target: self, action: #selector(clearWrongWords))
+        clearBtn.frame = CGRect(x: 0, y: y, width: 100, height: 26)
+        contentDoc.addSubview(clearBtn)
+        y += 36
+        return y
+    }
+
+    @objc private func exportData() {
+        guard let data = try? JSONEncoder().encode(typingPage?.state?.store.data) else { return }
+        let savePanel = NSSavePanel()
+        savePanel.allowedContentTypes = [.json]
+        savePanel.nameFieldStringValue = "engram-backup.json"
+        if savePanel.runModal() == .OK, let url = savePanel.url {
+            try? data.write(to: url)
+        }
+    }
+
+    @objc private func clearWrongWords() {
+        let alert = NSAlert()
+        alert.messageText = "确认清空错词本？"
+        alert.informativeText = "所有错词记录将被删除，此操作不可恢复。"
+        alert.addButton(withTitle: "确认清空")
+        alert.addButton(withTitle: "取消")
+        if alert.runModal() == .alertFirstButtonReturn {
+            typingPage?.state?.store.clearWrongWords()
+        }
+    }
+
+    private func rebuildCurrentTab() {
+        buildTabContent(currentTab)
+    }
+
+    // MARK: - 通用 UI 构建器
+
+    @discardableResult
+    private func addSectionTitle(_ parent: NSView, y: CGFloat, title: String, desc: String = "", width: CGFloat) -> CGFloat {
+        let titleLabel = NSTextField(labelWithString: title)
+        titleLabel.font = .systemFont(ofSize: 16, weight: .semibold)
+        titleLabel.textColor = .labelColor
+        titleLabel.frame = CGRect(x: 0, y: y, width: width, height: 22)
+        parent.addSubview(titleLabel)
+        var newY = y + 26
+        if !desc.isEmpty {
+            let descLabel = NSTextField(labelWithString: desc)
+            descLabel.font = .systemFont(ofSize: 11)
+            descLabel.textColor = .secondaryLabelColor
+            descLabel.lineBreakMode = .byWordWrapping
+            descLabel.cell?.wraps = true
+            descLabel.frame = CGRect(x: 0, y: newY, width: width - 20, height: 28)
+            parent.addSubview(descLabel)
+            newY += 32
+        }
+        return newY
+    }
+
+    @discardableResult
+    private func addToggleRow(_ parent: NSView, y: CGFloat, width: CGFloat,
+                              on: Bool, status: String, onChange: @escaping (Bool) -> Void) -> CGFloat {
+        let toggle = NSSwitch()
+        toggle.state = on ? .on : .off
+        toggle.frame = CGRect(x: 0, y: y, width: 40, height: 24)
+        toggle.target = self
+        toggle.action = #selector(toggleChanged(_:))
+        objc_setAssociatedObject(toggle, &Self.toggleCallbackKey, onChange, .OBJC_ASSOCIATION_RETAIN)
+        parent.addSubview(toggle)
+
+        let statusLabel = NSTextField(labelWithString: status)
+        statusLabel.font = .systemFont(ofSize: 12)
+        statusLabel.textColor = .secondaryLabelColor
+        statusLabel.alignment = .right
+        statusLabel.frame = CGRect(x: width - 100, y: y + 2, width: 90, height: 18)
+        parent.addSubview(statusLabel)
+        return y + 30
+    }
+
+    private static var toggleCallbackKey: UInt8 = 0
+
+    @objc private func toggleChanged(_ sender: NSSwitch) {
+        if let callback = objc_getAssociatedObject(sender, &Self.toggleCallbackKey) as? (Bool) -> Void {
+            callback(sender.state == .on)
+        }
+    }
+
+    @discardableResult
+    private func addSliderRow(_ parent: NSView, y: CGFloat, width: CGFloat,
+                              label: String, value: Double, min: Double, max: Double,
+                              suffix: String, onChange: @escaping (Double) -> Void) -> CGFloat {
+        let labelField = NSTextField(labelWithString: label)
+        labelField.font = .systemFont(ofSize: 12)
+        labelField.textColor = .secondaryLabelColor
+        labelField.frame = CGRect(x: 0, y: y + 1, width: 50, height: 18)
+        parent.addSubview(labelField)
+
+        let slider = NSSlider(value: value, minValue: min, maxValue: max, target: self, action: #selector(sliderChanged(_:)))
+        slider.frame = CGRect(x: 50, y: y, width: width - 110, height: 20)
+        objc_setAssociatedObject(slider, &Self.sliderCallbackKey, onChange, .OBJC_ASSOCIATION_RETAIN)
+        parent.addSubview(slider)
+
+        let valText = suffix.isEmpty ? String(format: "%.1f", value) : "\(Int(value))\(suffix)"
+        let valLabel = NSTextField(labelWithString: valText)
+        valLabel.font = .systemFont(ofSize: 12)
+        valLabel.textColor = .secondaryLabelColor
+        valLabel.alignment = .right
+        valLabel.frame = CGRect(x: width - 54, y: y + 1, width: 48, height: 18)
+        parent.addSubview(valLabel)
+        return y + 28
+    }
+
+    private static var sliderCallbackKey: UInt8 = 0
+
+    @objc private func sliderChanged(_ sender: NSSlider) {
+        if let callback = objc_getAssociatedObject(sender, &Self.sliderCallbackKey) as? (Double) -> Void {
+            callback(sender.doubleValue)
+        }
+    }
+}
+
 final class TypingPageView: NSView {
 
     // MARK: - 属性
 
-    private weak var state: AppState?
+    fileprivate weak var state: AppState?
     /// 页面内跳转（统计图标等）
     var onNavigate: ((AppPage) -> Void)?
-    private let service = TypingService()
+    fileprivate let service = TypingService()
     private var sessionWords: [WordEntry] = []
     private var wrongFlash = false
     private var hasStartedTyping = false
@@ -224,6 +893,17 @@ final class TypingPageView: NSView {
     private var ticker: Timer?
     private var wrongWords: [String] = []
     private var wrongWordSet: Set<String> = []
+    /// 当前单词的错误次数（qwerty：单词完成时保存记录）
+    private var currentWordWrongCount = 0
+    /// 当前词库名（用于错词记录分组）
+    private var currentDeckName = ""
+    // MARK: - 设置项（qwerty Setting 4 tab）
+    fileprivate var showPrevNextWord = true       // 高级：前后单词显示
+    fileprivate var ignoreCase = true             // 高级：忽略大小写
+    fileprivate var wordFontSize: CGFloat = 48    // 显示：外语字体大小
+    fileprivate var transFontSize: CGFloat = 18   // 显示：中文字体大小
+    private var keySoundVolume: Float = 0.5   // 音效：按键音音量
+    private var hintSoundVolume: Float = 0.5  // 音效：效果音音量
     /// 释义显示开关（qwerty language 图标）
     private var translationVisible = true
     /// 默写模式（qwerty eye 图标）
@@ -231,7 +911,7 @@ final class TypingPageView: NSView {
     /// 音标显示开关（qwerty 发音面板）
     private var phoneticVisible = true
     /// 释义发音开关（qwerty 发音面板）
-    private var transPronunciationEnabled = false
+    fileprivate var transPronunciationEnabled = false
     /// 循环发音开关（qwerty 发音面板）
     private var loopPronunciationEnabled = false
     /// 暂停状态（qwerty Pause）
@@ -244,20 +924,39 @@ final class TypingPageView: NSView {
     private let chapterText = TextMenuButton(title: "")
     private let pronunciationButton: HandCursorButton
     private let toolbarCard = CardView()
-    private var iconButtons: [ToolbarIconButton] = []
+    fileprivate var iconButtons: [ToolbarIconButton] = []
     private let startButton: NSButton
+    /// Start 悬停展开的 Restart 按钮（qwerty StartButton）
+    private let restartButton: NSButton
+    private var startHoverTA: NSTrackingArea?
     /// 当前弹出的 Popover（统一管理，修复关闭后无法再次打开的 bug）
     private var currentPopover: NSPopover?
+    /// 全局快捷键监听（Ctrl+J 朗读 / Ctrl+V 默写 / Ctrl+Shift+V 释义）
+    private var hotkeyMonitor: Any?
 
     // 中间界面
-    private let wordLabel = NSTextField(labelWithString: "")
+    fileprivate let wordLabel = NSTextField(labelWithString: "")
     private let phoneticLabel = LabelFactory.label("", font: .systemFont(ofSize: 14), color: Theme.textSecondary, align: .center)
-    private let translationLabel = LabelFactory.label("", font: .systemFont(ofSize: 18), color: Theme.textPrimary, align: .center)
+    fileprivate let translationLabel = LabelFactory.label("", font: .systemFont(ofSize: 18), color: Theme.textPrimary, align: .center)
     private let hintLabel = LabelFactory.label("", font: .systemFont(ofSize: 11), color: Theme.textSecondary, align: .center)
     private let overlayView = NSVisualEffectView()
     private let overlayLabel = LabelFactory.label("按任意键开始", font: .systemFont(ofSize: 20), color: Theme.textPrimary, align: .center)
+    /// 单词右侧喇叭按钮（qwerty：4帧音量图标循环动画）
+    fileprivate let speakerButton = HandCursorButton()
+    /// 有道真人发音播放器
+    private var pronunciationPlayer: AVPlayer?
+    private var pronunciationEndObserver: Any?
+    /// 喇叭 4 帧动画 Timer（qwerty SoundIcon：每 500ms 切换音量图标）
+    private var speakerAnimTimer: Timer?
+    private var speakerFrameIndex = 0
+    private let speakerFrames = ["volume_0", "volume_1", "volume_2", "volume_3"]
+    /// 前后单词导航（qwerty PrevAndNextWord）
+    private let prevWordView = PrevNextWordView(type: .prev)
+    private let nextWordView = PrevNextWordView(type: .next)
+    /// 上一个已朗读的单词 ID（避免每次 render 重复朗读）
+    private var lastSpokenWordId: String?
     /// 当前发音口音（美音 en-US / 英音 en-GB / 关闭=空串）
-    private var accentLocale = "en-US"
+    fileprivate var accentLocale = "en-US"
 
     // 底部进度与统计
     private let progressBar = ProgressBar()
@@ -297,6 +996,9 @@ final class TypingPageView: NSView {
     init(state: AppState) {
         self.state = state
         startButton = ButtonFactory.primary("Start", target: nil, action: #selector(TypingPageView.startTapped))
+        restartButton = ButtonFactory.primary("Restart", target: nil, action: #selector(TypingPageView.restartTapped))
+        restartButton.isHidden = true
+        restartButton.font = .systemFont(ofSize: 12, weight: .medium)
         pronunciationButton = HandCursorButton(title: "美音", target: nil, action: #selector(TypingPageView.showPronunciationPanel(_:)))
         pronunciationButton.isBordered = false
         pronunciationButton.focusRingType = .none
@@ -309,6 +1011,7 @@ final class TypingPageView: NSView {
         pronunciationButton.target = self
         keyboardCatcher.onKey = { [weak self] char in self?.handleKey(char) }
         setupLayout()
+        setupHotkeys()
         populateDecks()
         populateChapters()
         layoutToolbar()
@@ -317,7 +1020,10 @@ final class TypingPageView: NSView {
 
     required init?(coder: NSCoder) { fatalError("init(coder:) 未使用") }
     override var isFlipped: Bool { true }
-    deinit { ticker?.invalidate() }
+    deinit {
+        ticker?.invalidate()
+        if let monitor = hotkeyMonitor { NSEvent.removeMonitor(monitor) }
+    }
 
     /// 页面出现时夺回键盘焦点
     func activate() {
@@ -331,6 +1037,7 @@ final class TypingPageView: NSView {
         deckText.toolTip = "词库切换"
         deckText.onPick = { [weak self] idx in
             self?.deckText.selectedIndex = idx
+            self?.currentDeckName = self?.deckText.items[idx] ?? ""
             self?.populateChapters()
             self?.layoutToolbar()
             self?.startSession()
@@ -369,23 +1076,39 @@ final class TypingPageView: NSView {
             iconButtons.append(button)
         }
         toolbarCard.addSubview(startButton)
+        toolbarCard.addSubview(restartButton)
 
         // 中间界面
         wordLabel.alignment = .center
         wordLabel.wantsLayer = true
-        wordLabel.font = .monospacedSystemFont(ofSize: 48, weight: .regular)
+        wordLabel.font = .monospacedSystemFont(ofSize: wordFontSize, weight: .regular)
         addSubview(wordLabel)
+        // 喇叭按钮：单词右侧，点击朗读（qwerty 同款 4 帧音量图标）
+        speakerButton.isBordered = false
+        speakerButton.focusRingType = .none
+        speakerButton.imagePosition = .imageOnly
+        speakerButton.image = Self.loadSpeakerIcon("volume_0")
+        speakerButton.contentTintColor = Theme.textSecondary
+        speakerButton.target = self
+        speakerButton.action = #selector(speakerTapped)
+        speakerButton.toolTip = "朗读单词（⌃J）"
+        addSubview(speakerButton)
+        // 前后单词导航（qwerty PrevAndNextWord）
+        prevWordView.onClick = { [weak self] in self?.skipToPrevWord() }
+        nextWordView.onClick = { [weak self] in self?.skipToNextWord() }
+        addSubview(prevWordView)
+        addSubview(nextWordView)
         addSubview(phoneticLabel)
         addSubview(translationLabel)
         addSubview(hintLabel)
 
-        // 毛玻璃：仅覆盖单词区，模糊背后的单词/音标/释义，"按任意键开始"文字清晰浮于其上
-        // 用渐变 mask 让上下边缘柔和过渡，看不出方框边界（对齐 qwerty backdrop-blur）
-        overlayView.material = .popover
+        // 毛玻璃：覆盖单词区，模糊背后的单词（可透视），"按任意键开始"文字居中浮于其上
+        // maskImage 垂直渐变让上下边缘柔和过渡，看不出方框边界（对齐 qwerty backdrop-blur）
+        overlayView.material = .sheet
         overlayView.blendingMode = .withinWindow
         overlayView.state = .active
+        overlayView.alphaValue = 0.75
         overlayView.wantsLayer = true
-        overlayView.layer?.cornerRadius = 0
         overlayView.addSubview(overlayLabel)
         addSubview(overlayView)
 
@@ -401,7 +1124,7 @@ final class TypingPageView: NSView {
         addSubview(statCard)
         let captions = [("时间", statTime), ("输入数", statInput), ("WPM", statWPM), ("正确数", statCorrect), ("正确率", statAcc)]
         captions.enumerated().forEach { index, pair in
-            let caption = LabelFactory.label(pair.0, font: .systemFont(ofSize: 11), color: Theme.textSecondary.withAlphaComponent(0.85), align: .center)
+            let caption = LabelFactory.label(pair.0, font: .systemFont(ofSize: 11), color: Theme.textTertiary, align: .center)
             let line = NSView()
             line.wantsLayer = true
             line.layer = CALayer()
@@ -415,11 +1138,6 @@ final class TypingPageView: NSView {
         // 结束面板
         dimView.wantsLayer = true
         dimView.layer = CALayer()
-        dimView.layer?.backgroundColor = NSColor(name: nil) { appearance in
-            appearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
-                ? NSColor(white: 0.10, alpha: 0.75)
-                : NSColor(white: 0.82, alpha: 0.75)
-        }.cgColor
         addSubview(dimView)
         dimView.isHidden = true
         addSubview(resultCard)
@@ -446,12 +1164,33 @@ final class TypingPageView: NSView {
         progressBar.frame = CGRect(x: 238, y: h - bottomGap - cardH - gap - progressH, width: 220, height: progressH)
 
         let topEdge: CGFloat = 8 + Self.barHeight + 16
+        // 前后单词导航（qwerty：顶部左右两侧，仅打字中显示）
+        let navH: CGFloat = 56
+        let navW: CGFloat = 240
+        let navY = topEdge + 4
+        prevWordView.frame = CGRect(x: 24, y: navY, width: navW, height: navH)
+        nextWordView.frame = CGRect(x: 696 - navW - 24, y: navY, width: navW, height: navH)
+        let showNav = showPrevNextWord && hasStartedTyping && !isPaused && resultCard.isHidden
+        prevWordView.isHidden = !showNav || service.word(at: service.currentIndex - 1) == nil
+        nextWordView.isHidden = !showNav || service.word(at: service.currentIndex + 1) == nil
+
         let zoneBottom = h - bottomGap - cardH - gap - progressH - gap
-        let zoneH = max(zoneBottom - topEdge, 200)
+        let wordTop = topEdge + navH + 8
+        let zoneH = max(zoneBottom - wordTop, 200)
         let blockH: CGFloat = 90 + 10 + 22 + 8 + 28 + 6 + 16
-        let wordBlockTop = topEdge + (zoneH - blockH) / 2
+        let wordBlockTop = wordTop + (zoneH - blockH) / 2
         var y = wordBlockTop
         wordLabel.frame = CGRect(x: 48, y: y, width: 600, height: 90)
+        // 喇叭按钮：单词右侧，与单词垂直居中
+        if let word = service.currentWord {
+            let font = NSFont.monospacedSystemFont(ofSize: wordFontSize, weight: .regular)
+            let textW = (word.text as NSString).size(withAttributes: [.font: font]).width
+            let centerX = bounds.width / 2
+            speakerButton.frame = CGRect(x: centerX + textW / 2 + 12,
+                                         y: y + (90 - 32) / 2,
+                                         width: 32, height: 32)
+        }
+        speakerButton.isHidden = accentLocale.isEmpty
         y += 90 + 10
         phoneticLabel.frame = CGRect(x: 60, y: y, width: 576, height: 22)
         y += 22 + 8
@@ -459,20 +1198,15 @@ final class TypingPageView: NSView {
         y += 28 + 6
         hintLabel.frame = CGRect(x: 60, y: y, width: 576, height: 16)
 
-        // 毛玻璃覆盖整个单词区（单词+音标+释义+提示），上下各留 24pt 缓冲
-        let blurTop = max(wordBlockTop - 24, topEdge)
-        let blurBottom = min(y + 16 + 24, zoneBottom)
-        overlayView.frame = CGRect(x: 0, y: blurTop, width: 696, height: blurBottom - blurTop)
-        // 渐变 mask：上下边缘透明→中间不透明，消除模糊硬边界
-        let mask = CAGradientLayer()
-        mask.frame = overlayView.bounds
-        mask.colors = [NSColor.clear.cgColor, NSColor.black.cgColor, NSColor.black.cgColor, NSColor.clear.cgColor]
-        mask.locations = [0, 0.12, 0.88, 1]
-        mask.startPoint = CGPoint(x: 0.5, y: 0)
-        mask.endPoint = CGPoint(x: 0.5, y: 1)
-        overlayView.layer?.mask = mask
-        // "按任意键开始/继续"文字定位到单词区偏下（qwerty 样式：模糊单词下方）
-        overlayLabel.frame = CGRect(x: 0, y: (blurBottom - blurTop) * 0.62, width: 696, height: 36)
+        // 毛玻璃覆盖整个单词区（单词+音标+释义+提示），上下各留 32pt 缓冲
+        let blurTop = max(wordBlockTop - 32, wordTop)
+        let blurBottom = min(y + 16 + 32, zoneBottom)
+        let blurH = blurBottom - blurTop
+        overlayView.frame = CGRect(x: 0, y: blurTop, width: 696, height: blurH)
+        // maskImage：上下渐变透明，消除模糊硬边界（NSVisualEffectView 用 maskImage 比 layer.mask 更可靠）
+        overlayView.maskImage = Self.makeVerticalGradientMask(size: overlayView.bounds.size)
+        // "按任意键开始/继续"文字垂直居中
+        overlayLabel.frame = CGRect(x: 0, y: (blurH - 36) / 2, width: 696, height: 36)
 
         dimView.frame = bounds
         resultCard.frame = CGRect(x: 108, y: max((h - 400) / 2, 60), width: 480, height: 400)
@@ -505,11 +1239,28 @@ final class TypingPageView: NSView {
             x += Self.iconSize + (index < iconButtons.count - 1 ? Self.iconGap : Self.iconsToStartGap)
         }
         startButton.frame = CGRect(x: x, y: 8, width: Self.startWidth, height: 28)
+        // Restart 按钮：Start 正下方，悬停时展开
+        restartButton.frame = CGRect(x: x, y: 40, width: Self.startWidth, height: 22)
+        // 给 Start 加悬停追踪（qwerty：悬停展开 Restart）
+        if let startHoverTA { startButton.removeTrackingArea(startHoverTA) }
+        startHoverTA = NSTrackingArea(rect: startButton.bounds,
+                                       options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect],
+                                       owner: self)
+        startButton.addTrackingArea(startHoverTA!)
     }
 
     private static func textWidth(_ text: String) -> CGFloat {
         let font = NSFont.systemFont(ofSize: 15, weight: .medium)
         return (text as NSString).size(withAttributes: [.font: font]).width
+    }
+
+    /// 加载喇叭 4 帧 SVG 图标（qwerty VolumeIcon 系列，模板着色）
+    private static func loadSpeakerIcon(_ name: String) -> NSImage? {
+        guard let url = Bundle.main.url(forResource: name, withExtension: "svg", subdirectory: "icons"),
+              let image = NSImage(contentsOf: url) else { return nil }
+        image.size = NSSize(width: 28, height: 28)
+        image.isTemplate = true
+        return image
     }
 
     // MARK: - 会话控制
@@ -520,6 +1271,7 @@ final class TypingPageView: NSView {
         deckText.values = decks.map { $0.id as Any? }
         deckText.title = decks.first?.name ?? ""
         deckText.selectedIndex = 0
+        currentDeckName = decks.first?.name ?? ""
     }
 
     private func populateChapters() {
@@ -571,6 +1323,130 @@ final class TypingPageView: NSView {
         }
     }
 
+    /// qwerty StartButton 悬停展开的 Restart：重新开始本章
+    @objc private func restartTapped() {
+        restartButton.isHidden = true
+        startSession()
+    }
+
+    // MARK: - Start 按钮悬停展开 Restart
+
+    override func mouseEntered(with event: NSEvent) {
+        if event.trackingArea === startHoverTA {
+            restartButton.isHidden = false
+        }
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        if event.trackingArea === startHoverTA {
+            // 延迟隐藏，给用户时间移到 Restart 按钮上
+            DispatchQueue.main.asyncAfter(deadline: .now() + 0.12) { [weak self] in
+                guard let self = self else { return }
+                let loc = NSEvent.mouseLocation
+                let inStart = self.startButton.isMousePoint(self.startButton.convert(loc, from: nil), in: self.startButton.bounds)
+                let inRestart = self.restartButton.isMousePoint(self.restartButton.convert(loc, from: nil), in: self.restartButton.bounds)
+                if !inStart && !inRestart {
+                    self.restartButton.isHidden = true
+                }
+            }
+        }
+    }
+
+    // MARK: - 全局快捷键（qwerty：Ctrl+J 朗读 / Ctrl+V 默写 / Ctrl+Shift+V 释义）
+
+    private func setupHotkeys() {
+        hotkeyMonitor = NSEvent.addLocalMonitorForEvents(matching: .keyDown) { [weak self] event in
+            guard let self = self, self.window?.isKeyWindow ?? false else { return event }
+            let mods = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+            // Ctrl+J：朗读当前单词
+            if mods.contains(.control) && !mods.contains(.shift) && event.keyCode == 38 {
+                self.speakCurrentWord()
+                return nil
+            }
+            // Ctrl+V：切换默写模式
+            if mods.contains(.control) && !mods.contains(.shift) && event.keyCode == 9 {
+                self.toggleDictationQuick()
+                return nil
+            }
+            // Ctrl+Shift+V：切换释义显示
+            if mods.contains([.control, .shift]) && event.keyCode == 9 {
+                self.toggleTranslation()
+                return nil
+            }
+            return event
+        }
+    }
+
+    /// 朗读当前单词（有道真人发音 API，qwerty 同款）
+    private func speakCurrentWord() {
+        guard !accentLocale.isEmpty, let word = service.currentWord else { return }
+        // 有道词典 API：type=1 英音，type=2 美音
+        let type = accentLocale == "en-GB" ? 1 : 2
+        let urlStr = "https://dict.youdao.com/dictvoice?audio=\(word.text.addingPercentEncoding(withAllowedCharacters: .urlQueryAllowed) ?? word.text)&type=\(type)"
+        guard let url = URL(string: urlStr) else { return }
+        // 停止之前的播放
+        stopPronunciation()
+        let playerItem = AVPlayerItem(url: url)
+        pronunciationPlayer = AVPlayer(playerItem: playerItem)
+        // 播放结束时停止动画
+        pronunciationEndObserver = NotificationCenter.default.addObserver(
+            forName: .AVPlayerItemDidPlayToEndTime,
+            object: playerItem,
+            queue: .main
+        ) { [weak self] _ in
+            self?.stopSpeakerAnimation()
+        }
+        pronunciationPlayer?.play()
+        startSpeakerAnimation()
+    }
+
+    /// 点击喇叭朗读
+    @objc private func speakerTapped() {
+        speakCurrentWord()
+    }
+
+    /// 停止发音播放
+    private func stopPronunciation() {
+        pronunciationPlayer?.pause()
+        pronunciationPlayer = nil
+        if let observer = pronunciationEndObserver {
+            NotificationCenter.default.removeObserver(observer)
+            pronunciationEndObserver = nil
+        }
+        stopSpeakerAnimation()
+    }
+
+    /// 喇叭 4 帧动画（qwerty SoundIcon：无波→1波→2波→3波，每 500ms 循环）
+    private func startSpeakerAnimation() {
+        speakerFrameIndex = 0
+        speakerButton.image = Self.loadSpeakerIcon(speakerFrames[0])
+        speakerAnimTimer?.invalidate()
+        speakerAnimTimer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { [weak self] _ in
+            guard let self = self else { return }
+            self.speakerFrameIndex = (self.speakerFrameIndex + 1) % self.speakerFrames.count
+            self.speakerButton.image = Self.loadSpeakerIcon(self.speakerFrames[self.speakerFrameIndex])
+        }
+    }
+
+    /// 停止喇叭动画，回到默认图标
+    private func stopSpeakerAnimation() {
+        speakerAnimTimer?.invalidate()
+        speakerAnimTimer = nil
+        speakerFrameIndex = 0
+        speakerButton.image = Self.loadSpeakerIcon("volume_0")
+    }
+
+    /// 快速切换默写（Ctrl+V）
+    private func toggleDictationQuick() {
+        if dictationMode == .off {
+            dictationMode = .hideAll
+        } else {
+            dictationMode = .off
+        }
+        updateDictationIcon()
+        render()
+    }
+
     /// 暂停：停止计时、显示模糊遮罩、按钮变 Pause
     private func pauseSession() {
         guard hasStartedTyping && !isPaused else { return }
@@ -599,6 +1475,28 @@ final class TypingPageView: NSView {
         if hasStartedTyping && !isPaused && resultCard.isHidden {
             pauseSession()
         }
+    }
+
+    /// 跳转到上一个单词（qwerty PrevAndNextWord）
+    private func skipToPrevWord() {
+        let prevIndex = max(0, service.currentIndex - 1)
+        guard prevIndex != service.currentIndex else { return }
+        stopPronunciation()
+        lastSpokenWordId = nil
+        _ = service.skipToWord(prevIndex)
+        render()
+        needsLayout = true
+    }
+
+    /// 跳转到下一个单词（qwerty PrevAndNextWord）
+    private func skipToNextWord() {
+        let nextIndex = min(service.totalWords - 1, service.currentIndex + 1)
+        guard nextIndex != service.currentIndex else { return }
+        stopPronunciation()
+        lastSpokenWordId = nil
+        _ = service.skipToWord(nextIndex)
+        render()
+        needsLayout = true
     }
 
     /// 离开页面时自动暂停（view 从 window 移除）
@@ -706,6 +1604,7 @@ final class TypingPageView: NSView {
 
         private func showMenu() {
             let menu = NSMenu()
+            menu.appearance = NSAppearance(named: .aqua)
             menu.autoenablesItems = false
             for (i, item) in items.enumerated() {
                 let mi = NSMenuItem(title: item, action: #selector(menuPicked(_:)), keyEquivalent: "")
@@ -746,10 +1645,12 @@ final class TypingPageView: NSView {
     private func showSoundPanel(_ sender: NSButton) {
         let popover = NSPopover()
         popover.behavior = .transient
+        popover.appearance = NSAppearance(named: .aqua)
         let content = NSViewController()
         let view = NSView(frame: CGRect(x: 0, y: 0, width: 240, height: 130))
         content.view = view
-
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.white.cgColor
         // 按键音
         let keyLabel = LabelFactory.label("开关按键音", font: .systemFont(ofSize: 13, weight: .medium))
         keyLabel.frame = CGRect(x: 16, y: 96, width: 100, height: 18)
@@ -809,10 +1710,12 @@ final class TypingPageView: NSView {
         let viewH: CGFloat = isOn ? 130 : 70
         let popover = NSPopover()
         popover.behavior = .transient
+        popover.appearance = NSAppearance(named: .aqua)
         let content = NSViewController()
         let view = NSView(frame: CGRect(x: 0, y: 0, width: 240, height: viewH))
         content.view = view
-
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.white.cgColor
         // 开关
         let toggle = NSSwitch()
         toggle.state = isOn ? .on : .off
@@ -886,12 +1789,14 @@ final class TypingPageView: NSView {
     private func showLoopPanel(_ sender: NSButton) {
         let popover = NSPopover()
         popover.behavior = .transient
+        popover.appearance = NSAppearance(named: .aqua)
         let content = NSViewController()
         let options: [Int] = [1, 3, 5, 8, Int.max]
         let labels = ["1", "3", "5", "8", "无限"]
         let view = NSView(frame: CGRect(x: 0, y: 0, width: 240, height: CGFloat(30 + options.count * 32)))
         content.view = view
-
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.white.cgColor
         let title = LabelFactory.label("选择单词的循环次数", font: .systemFont(ofSize: 13, weight: .medium))
         title.frame = CGRect(x: 16, y: view.frame.height - 28, width: 200, height: 18)
         view.addSubview(title)
@@ -924,6 +1829,8 @@ final class TypingPageView: NSView {
         iconButtons[1].setIcon(isOff ? "tabler_repeat-off" : "tabler_repeat",
                                fallbackSymbol: "repeat", active: !isOff)
         iconButtons[1].toolTip = isOff ? "单词循环：关闭" : (times == Int.max ? "单词循环：无限" : "单词循环 ×\(times)")
+        // qwerty：循环图标中央叠加次数数字，无限时不显示
+        iconButtons[1].setBadge(isOff || times == Int.max ? nil : "\(times)")
     }
 
     /// 释义显示开关（qwerty language 图标）
@@ -934,41 +1841,75 @@ final class TypingPageView: NSView {
                                fallbackSymbol: "textformat.size", active: translationVisible)
     }
 
-    // MARK: - 错题本弹窗
+    // MARK: - 错题本弹窗（qwerty ErrorBook：持久化、错误次数、删除）
 
     private func showErrorBook(_ sender: NSButton) {
+        let records = state?.store.allWrongWords() ?? []
         let popover = NSPopover()
         popover.behavior = .transient
+        popover.appearance = NSAppearance(named: .aqua)
         let content = NSViewController()
-        let view = NSView(frame: CGRect(x: 0, y: 0, width: 320, height: 280))
+        let view = NSView(frame: CGRect(x: 0, y: 0, width: 360, height: 360))
         content.view = view
-
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.white.cgColor
+        // 标题 + 总数
         let title = LabelFactory.label("错题本", font: Theme.titleFont(16))
-        title.frame = CGRect(x: 16, y: 248, width: 200, height: 22)
+        title.frame = CGRect(x: 16, y: 328, width: 120, height: 22)
         view.addSubview(title)
+        let countLabel = LabelFactory.label("共 \(records.count) 词", font: .systemFont(ofSize: 12),
+                                            color: Theme.textSecondary, align: .right)
+        countLabel.frame = CGRect(x: 240, y: 330, width: 104, height: 18)
+        view.addSubview(countLabel)
 
-        if wrongWords.isEmpty {
+        if records.isEmpty {
             let empty = LabelFactory.label("暂无错词，继续保持！", font: .systemFont(ofSize: 13),
                                            color: Theme.textSecondary, align: .center)
-            empty.frame = CGRect(x: 0, y: 120, width: 320, height: 20)
+            empty.frame = CGRect(x: 0, y: 160, width: 360, height: 20)
             view.addSubview(empty)
         } else {
-            let scroll = NSScrollView(frame: CGRect(x: 16, y: 16, width: 288, height: 220))
+            let scroll = NSScrollView(frame: CGRect(x: 16, y: 16, width: 328, height: 300))
             scroll.hasVerticalScroller = true
             scroll.borderType = .noBorder
             scroll.drawsBackground = false
-            let doc = NSView(frame: CGRect(x: 0, y: 0, width: 272, height: max(CGFloat(wrongWords.count) * 32, 220)))
-            for (i, word) in wrongWords.enumerated() {
+            let rowH: CGFloat = 52
+            let doc = NSView(frame: CGRect(x: 0, y: 0, width: 312, height: max(CGFloat(records.count) * rowH, 300)))
+            for (i, record) in records.enumerated() {
                 let row = NSView()
                 row.wantsLayer = true
                 row.layer = CALayer()
-                row.layer?.backgroundColor = Theme.danger.withAlphaComponent(0.08).cgColor
-                row.layer?.cornerRadius = 6
-                row.frame = CGRect(x: 0, y: CGFloat(wrongWords.count - 1 - i) * 32 + 4, width: 272, height: 26)
-                let label = LabelFactory.label(word, font: .monospacedSystemFont(ofSize: 14, weight: .medium),
-                                               color: Theme.danger)
-                label.frame = CGRect(x: 12, y: 4, width: 200, height: 18)
-                row.addSubview(label)
+                row.layer?.backgroundColor = Theme.cardBackground.cgColor
+                row.layer?.cornerRadius = 8
+                row.layer?.borderWidth = 1
+                row.layer?.borderColor = Theme.cardBorder.cgColor
+                row.frame = CGRect(x: 0, y: CGFloat(records.count - 1 - i) * rowH + 4, width: 312, height: rowH - 8)
+                // 单词
+                let wordLabel = LabelFactory.label(record.word, font: .monospacedSystemFont(ofSize: 15, weight: .medium),
+                                                   color: Theme.textPrimary)
+                wordLabel.frame = CGRect(x: 12, y: 24, width: 200, height: 18)
+                row.addSubview(wordLabel)
+                // 释义
+                let transLabel = LabelFactory.label(record.translation, font: .systemFont(ofSize: 11),
+                                                    color: Theme.textSecondary)
+                transLabel.frame = CGRect(x: 12, y: 6, width: 200, height: 14)
+                transLabel.lineBreakMode = .byTruncatingTail
+                row.addSubview(transLabel)
+                // 错误次数
+                let countBadge = LabelFactory.label("错 \(record.wrongCount) 次", font: .systemFont(ofSize: 11, weight: .medium),
+                                                    color: Theme.danger, align: .right)
+                countBadge.frame = CGRect(x: 220, y: 18, width: 56, height: 16)
+                row.addSubview(countBadge)
+                // 删除按钮
+                let delBtn = HandCursorButton()
+                delBtn.title = "删除"
+                delBtn.isBordered = false
+                delBtn.font = .systemFont(ofSize: 11)
+                delBtn.contentTintColor = Theme.textTertiary
+                delBtn.identifier = NSUserInterfaceItemIdentifier(record.id)
+                delBtn.target = self
+                delBtn.action = #selector(deleteWrongWord(_:))
+                delBtn.frame = CGRect(x: 278, y: 16, width: 28, height: 20)
+                row.addSubview(delBtn)
                 doc.addSubview(row)
             }
             scroll.documentView = doc
@@ -978,15 +1919,24 @@ final class TypingPageView: NSView {
         presentPopover(popover, sender: sender)
     }
 
+    /// 删除错词（错题本弹窗内）
+    @objc private func deleteWrongWord(_ sender: NSButton) {
+        guard let id = sender.identifier?.rawValue else { return }
+        state?.store.deleteWrongWord(id: id)
+        sender.window?.close()
+    }
+
     // MARK: - 指法图示弹窗
 
     private func showKeyboardGuide(_ sender: NSButton) {
         let popover = NSPopover()
         popover.behavior = .transient
+        popover.appearance = NSAppearance(named: .aqua)
         let content = NSViewController()
         let view = NSView(frame: CGRect(x: 0, y: 0, width: 360, height: 260))
         content.view = view
-
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.white.cgColor
         let title = LabelFactory.label("推荐指法", font: Theme.titleFont(16))
         title.frame = CGRect(x: 16, y: 228, width: 200, height: 22)
         view.addSubview(title)
@@ -1017,69 +1967,53 @@ final class TypingPageView: NSView {
 
     // MARK: - 设置弹窗
 
+    // MARK: - 设置窗口（qwerty Setting：独立窗口，左侧边栏+右侧内容）
+
+    private var settingsWindow: NSWindow?
+
     private func showSettings(_ sender: NSButton) {
-        let popover = NSPopover()
-        popover.behavior = .transient
-        let content = NSViewController()
-        let view = NSView(frame: CGRect(x: 0, y: 0, width: 280, height: 200))
-        content.view = view
-
-        let title = LabelFactory.label("设置", font: Theme.titleFont(16))
-        title.frame = CGRect(x: 16, y: 168, width: 200, height: 22)
-        view.addSubview(title)
-
-        // 按键音开关
-        let soundBtn = NSButton(checkboxWithTitle: "按键音效", target: self, action: #selector(settingsSoundToggle(_:)))
-        soundBtn.state = SoundManager.shared.keySoundEnabled ? .on : .off
-        soundBtn.frame = CGRect(x: 16, y: 136, width: 200, height: 22)
-        view.addSubview(soundBtn)
-
-        // 释义默认显示
-        let transBtn = NSButton(checkboxWithTitle: "默认显示释义", target: self, action: #selector(settingsTransToggle(_:)))
-        transBtn.state = translationVisible ? .on : .off
-        transBtn.frame = CGRect(x: 16, y: 108, width: 200, height: 22)
-        view.addSubview(transBtn)
-
-        // 每章词数
-        let countLabel = LabelFactory.label("每章单词数：\(Self.wordsPerChapter)", font: .systemFont(ofSize: 12),
-                                            color: Theme.textSecondary)
-        countLabel.frame = CGRect(x: 16, y: 76, width: 200, height: 18)
-        view.addSubview(countLabel)
-
-        let hint = LabelFactory.label("快捷键：Enter 开始/暂停 ｜ Tab 跳过 ｜ 任意键恢复", font: .systemFont(ofSize: 10),
-                                      color: Theme.textTertiary)
-        hint.frame = CGRect(x: 16, y: 16, width: 250, height: 36)
-        hint.cell?.wraps = true
-        view.addSubview(hint)
-
-        popover.contentViewController = content
-        presentPopover(popover, sender: sender)
+        // 如果已打开则前置
+        if let win = settingsWindow, win.isVisible {
+            win.makeKeyAndOrderFront(nil)
+            return
+        }
+        let panel = SettingsPanelView(frame: NSRect(x: 0, y: 0, width: 550, height: 380))
+        panel.typingPage = self
+        let win = BorderlessKeyWindow(contentRect: NSRect(x: 0, y: 0, width: 550, height: 380),
+                           styleMask: [.borderless],
+                           backing: .buffered, defer: false)
+        win.title = "设置"
+        win.isMovableByWindowBackground = true
+        win.isReleasedWhenClosed = false
+        win.isRestorable = false
+        win.hasShadow = true
+        win.isOpaque = false
+        win.backgroundColor = .clear
+        win.contentView = panel
+        win.center()
+        settingsWindow = win
+        win.makeKeyAndOrderFront(nil)
     }
 
-    @objc private func settingsSoundToggle(_ sender: NSButton) {
-        let on = sender.state == .on
-        SoundManager.shared.keySoundEnabled = on
-        SoundManager.shared.hintSoundEnabled = on
-        iconButtons[0].setActive(on)
+    /// 设置窗口关闭时清理
+    func settingsWindowDidClose() {
+        settingsWindow = nil
     }
 
-    @objc private func settingsTransToggle(_ sender: NSButton) {
-        translationVisible = sender.state == .on
-        translationLabel.isHidden = !translationVisible
-        iconButtons[3].setActive(translationVisible)
-    }
 
     // MARK: - 发音面板（qwerty PronunciationSwitcher：音标+单词发音+释义发音+循环发音+口音）
 
     @objc private func showPronunciationPanel(_ sender: NSButton) {
         let pronOn = !accentLocale.isEmpty
-        let viewH: CGFloat = pronOn ? 310 : 150
+        let viewH: CGFloat = pronOn ? 340 : 150
         let popover = NSPopover()
         popover.behavior = .transient
+        popover.appearance = NSAppearance(named: .aqua)
         let content = NSViewController()
         let view = NSView(frame: CGRect(x: 0, y: 0, width: 240, height: viewH))
         content.view = view
-
+        view.wantsLayer = true
+        view.layer?.backgroundColor = NSColor.white.cgColor
         var y = viewH - 30
 
         // 音标显示
@@ -1171,6 +2105,13 @@ final class TypingPageView: NSView {
                 self.layoutToolbar()
             }
             view.addSubview(accentPopup)
+
+            // qwerty Tips：朗读发音快捷键提示
+            y -= 30
+            let tips = LabelFactory.label("Tips：朗读快捷键 ⌃J", font: .systemFont(ofSize: 10, weight: .medium),
+                                          color: Theme.textTertiary, align: .left)
+            tips.frame = CGRect(x: 16, y: y, width: 208, height: 16)
+            view.addSubview(tips)
         }
 
         popover.contentViewController = content
@@ -1221,6 +2162,10 @@ final class TypingPageView: NSView {
         NSApp.appearance = isDark ? NSAppearance(named: .aqua) : NSAppearance(named: .darkAqua)
         iconButtons[6].setIcon(isDark ? "heroicons_sun-solid" : "heroicons_moon-solid",
                                fallbackSymbol: isDark ? "sun.max.fill" : "moon.fill", active: true)
+        // 主动刷新窗口渐变和卡片颜色
+        NXWindowStyle.updateAppearance()
+        needsLayout = true
+        subviews.forEach { $0.needsLayout = true }
     }
 
     private func startSession() {
@@ -1228,12 +2173,15 @@ final class TypingPageView: NSView {
         guard !words.isEmpty else { return }
         sessionWords = words
         service.startSession(words: words)
+        service.ignoreCase = ignoreCase
         hasStartedTyping = false
         isPaused = false
         accumulatedElapsed = 0
         sessionStart = Date()
         wrongWords.removeAll()
         wrongWordSet.removeAll()
+        currentWordWrongCount = 0
+        lastSpokenWordId = nil
         resultCard.isHidden = true
         dimView.isHidden = true
         stopTicker()
@@ -1276,19 +2224,21 @@ final class TypingPageView: NSView {
             startTapped()
             return
         }
-        // 暂停中：任意字母键恢复
+        // 暂停中：任意键恢复（该键只触发恢复，不当作输入，qwerty 行为）
         if isPaused {
             resumeSession()
-            guard char.isLetter else { return }
+            return
         }
         if char == "\t" { skipCurrentWord(); return }
+        // 未开始：任意键开始（该键只触发开始，不当作输入判断对错）
         if !hasStartedTyping {
             hasStartedTyping = true
             sessionStart = Date()
             accumulatedElapsed = 0
             startTicker()
             updateStartButton()
-            guard char.isLetter else { render(); return }
+            render()
+            return
         }
         guard char.isLetter else { return }
         let feedback = service.input(character: char)
@@ -1298,9 +2248,13 @@ final class TypingPageView: NSView {
             render()
         case .wrongAndReset:
             SoundManager.shared.playWrong()
+            currentWordWrongCount += 1
             if let word = service.currentWord { recordWrongWord(word.text) }
             animateWrongShake()
             wrongFlash = true
+            // 打错重来时重新朗读（qwerty：错误重置后重新读单词）
+            stopPronunciation()
+            lastSpokenWordId = nil
             DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { [weak self] in
                 self?.wrongFlash = false
                 self?.render()
@@ -1344,18 +2298,17 @@ final class TypingPageView: NSView {
         // TypingService 完成后已前进，completedWords 即刚完成单词的序号（从 1 起）
         let done = service.stats.completedWords
         let target = sessionWords[max(0, done - 1)]
+        // qwerty：单词完成时保存错词记录（含错误次数），持久化跨会话
+        if currentWordWrongCount > 0 {
+            state?.store.recordWrongWord(
+                word: target.text, translation: target.translation,
+                dictName: currentDeckName, wrongCount: currentWordWrongCount,
+                letterMistakes: nil
+            )
+        }
+        currentWordWrongCount = 0
         state?.recordPractice(id: target.id, kind: .word, grade: .good)
         state?.store.recordToday(action: { $0.wordsTyped += 1 }, now: Date())
-        if !accentLocale.isEmpty {
-            state?.speech.speak(target.text, rate: 0.5, locale: accentLocale)
-            // 释义发音：单词朗读后读中文释义
-            if transPronunciationEnabled {
-                DispatchQueue.main.asyncAfter(deadline: .now() + 0.8) { [weak self] in
-                    guard let self = self, self.transPronunciationEnabled else { return }
-                    self.state?.speech.speak(target.translation, rate: 0.5, locale: "zh-CN")
-                }
-            }
-        }
         render()
     }
 
@@ -1377,8 +2330,69 @@ final class TypingPageView: NSView {
         updateStartButton()
         resultCard.subviews.forEach { $0.removeFromSuperview() }
         buildResultContent(wpm: wpm, acc: acc, elapsed: elapsed)
+        // 动态解析遮罩颜色（明暗模式自适应）
+        let isDark = NSApp.effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua
+        dimView.layer?.backgroundColor = (isDark
+            ? NSColor(white: 0.08, alpha: 0.8)
+            : NSColor(white: 0.85, alpha: 0.75)).cgColor
         dimView.isHidden = false
         resultCard.isHidden = false
+        playConfetti()
+    }
+
+    // MARK: - 完成彩纸动画（qwerty useConfetti）
+
+    private func playConfetti() {
+        let emitter = CAEmitterLayer()
+        emitter.frame = CGRect(x: 0, y: -20, width: bounds.width, height: 10)
+        emitter.emitterShape = .line
+        emitter.emitterPosition = CGPoint(x: bounds.width / 2, y: 0)
+        emitter.emitterSize = CGSize(width: bounds.width, height: 0)
+        emitter.renderMode = .oldestFirst
+
+        let colors: [CGColor] = [
+            NSColor(red: 0.424, green: 0.361, blue: 0.906, alpha: 1).cgColor, // 主题紫
+            NSColor.systemPink.cgColor,
+            NSColor.systemOrange.cgColor,
+            NSColor.systemTeal.cgColor,
+            NSColor.systemYellow.cgColor,
+            NSColor.systemGreen.cgColor
+        ]
+        var cells: [CAEmitterCell] = []
+        for color in colors {
+            let cell = CAEmitterCell()
+            cell.contents = {
+                let size: CGFloat = 8
+                let img = NSImage(size: NSSize(width: size, height: size))
+                img.lockFocus()
+                let path = NSBezierPath(rect: NSRect(x: 0, y: 0, width: size, height: size * 0.4))
+                NSColor(cgColor: color)?.setFill()
+                path.fill()
+                img.unlockFocus()
+                return img
+            }() as Any
+            cell.birthRate = 30
+            cell.lifetime = 3.0
+            cell.velocity = 250
+            cell.velocityRange = 150
+            cell.emissionLongitude = .pi / 2
+            cell.emissionRange = .pi / 4
+            cell.spin = 4
+            cell.spinRange = 4
+            cell.scale = 0.8
+            cell.scaleRange = 0.4
+            cells.append(cell)
+        }
+        emitter.emitterCells = cells
+        layer?.addSublayer(emitter)
+
+        // 3 秒后停止发射，再 2 秒后移除
+        DispatchQueue.main.asyncAfter(deadline: .now() + 2.5) {
+            emitter.birthRate = 0
+        }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 5.0) {
+            emitter.removeFromSuperlayer()
+        }
     }
 
     // MARK: - 渲染
@@ -1386,6 +2400,21 @@ final class TypingPageView: NSView {
     private func render() {
         guard let word = service.currentWord else { return }
         let s = service.stats
+        // 新单词出现时自动朗读（qwerty：先读再拼，有道真人发音）
+        if word.id != lastSpokenWordId && hasStartedTyping {
+            lastSpokenWordId = word.id
+            if !accentLocale.isEmpty {
+                speakCurrentWord()
+                // 释义发音：单词朗读后读中文释义（用系统 TTS，中文没有有道 API）
+                if transPronunciationEnabled {
+                    DispatchQueue.main.asyncAfter(deadline: .now() + 1.0) { [weak self] in
+                        guard let self = self, self.transPronunciationEnabled,
+                              self.lastSpokenWordId == word.id else { return }
+                        self.state?.speech.speak(word.translation, rate: 0.5, locale: "zh-CN")
+                    }
+                }
+            }
+        }
         // 累计时间 = 暂停前累计 + 当前活跃段（暂停时不加）
         let currentSegment = (hasStartedTyping && !isPaused) ? Date().timeIntervalSince(sessionStart) : 0
         let elapsed = accumulatedElapsed + currentSegment
@@ -1402,8 +2431,17 @@ final class TypingPageView: NSView {
         progressBar.setProgress(service.progress)
         wordLabel.attributedStringValue = renderWordText(word.text)
         hintLabel.stringValue = wrongFlash ? "输入错误，本词需要重新输入" : (hasStartedTyping ? "错一个字母就要重来" : "")
+        // 前后单词导航内容（第一个词无 prev，最后一个词无 next，可见性由 layout 控制）
+        if let prev = service.word(at: service.currentIndex - 1) {
+            prevWordView.configure(word: prev.text, translation: prev.translation)
+        }
+        if let next = service.word(at: service.currentIndex + 1) {
+            nextWordView.configure(word: next.text, translation: next.translation)
+        }
         // 遮罩：未开始 或 暂停时显示；进行中或结束时隐藏
         overlayView.isHidden = (hasStartedTyping && !isPaused) || !resultCard.isHidden
+        // 更新喇叭按钮位置
+        needsLayout = true
     }
 
     private func renderWordText(_ text: String) -> NSAttributedString {
@@ -1496,5 +2534,20 @@ final class TypingPageView: NSView {
     private static func timeString(_ seconds: TimeInterval) -> String {
         let total = Int(seconds)
         return String(format: "%02d:%02d", total / 60, total % 60)
+    }
+
+    /// 生成垂直渐变 maskImage：上下透明、中间不透明，用于 NSVisualEffectView 柔化边缘
+    private static func makeVerticalGradientMask(size: NSSize) -> NSImage {
+        let image = NSImage(size: size)
+        image.lockFocus()
+        let gradient = NSGradient(colorsAndLocations:
+            (NSColor(white: 0, alpha: 0), 0),
+            (NSColor(white: 0, alpha: 1), 0.22),
+            (NSColor(white: 0, alpha: 1), 0.78),
+            (NSColor(white: 0, alpha: 0), 1.0)
+        )
+        gradient?.draw(in: NSRect(origin: .zero, size: size), angle: 90)
+        image.unlockFocus()
+        return image
     }
 }
